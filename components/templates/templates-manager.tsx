@@ -134,6 +134,7 @@ export function TemplatesManager() {
   const [folderFilter, setFolderFilter] = useState("all");
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -305,6 +306,45 @@ export function TemplatesManager() {
     }
   }
 
+  async function handleDeleteFolder(folder: TemplateFolder) {
+    const count = templates.filter((template) => template.folder_id === folder.id).length;
+
+    if (count > 0) {
+      setError("Move or delete the templates inside this folder before deleting it.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete the empty folder "${folder.name}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingFolderId(folder.id);
+    setError(null);
+
+    try {
+      const token = await getAccessToken();
+      const response = await fetch(`/api/template-folders/${folder.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Template folder could not be deleted.");
+      }
+
+      setFolders((currentFolders) => currentFolders.filter((item) => item.id !== folder.id));
+      setFolderFilter((currentFilter) => currentFilter === folder.id ? "all" : currentFilter);
+    } catch (deleteFolderError) {
+      setError(getErrorMessage(deleteFolderError, "Template folder could not be deleted."));
+    } finally {
+      setDeletingFolderId(null);
+    }
+  }
+
   async function handleDeleteTemplate(template: EmailTemplate) {
     const confirmed = window.confirm(`Delete "${template.name}"? This will remove the template and its versions.`);
     if (!confirmed) {
@@ -432,15 +472,30 @@ export function TemplatesManager() {
                 {folders.map((folder) => {
                   const count = templates.filter((template) => template.folder_id === folder.id).length;
                   return (
-                    <button
+                    <span
                       key={folder.id}
                       className={`inline-flex h-9 max-w-full items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === folder.id ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
-                      onClick={() => setFolderFilter(folder.id)}
-                      type="button"
                     >
-                      <span className="max-w-[180px] truncate">{folder.name}</span>
+                      <button
+                        className="min-w-0 truncate text-left"
+                        onClick={() => setFolderFilter(folder.id)}
+                        type="button"
+                      >
+                        {folder.name}
+                      </button>
                       <span className="text-xs text-slate-500">{count}</span>
-                    </button>
+                      {count === 0 && (
+                        <button
+                          aria-label={`Delete ${folder.name}`}
+                          className="grid size-6 shrink-0 place-items-center rounded-[6px] text-slate-500 transition hover:bg-red-danger/15 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={deletingFolderId === folder.id}
+                          onClick={() => { void handleDeleteFolder(folder); }}
+                          type="button"
+                        >
+                          {deletingFolderId === folder.id ? <Loader2 className="animate-spin" size={13} /> : <Trash2 size={13} />}
+                        </button>
+                      )}
+                    </span>
                   );
                 })}
               </div>
