@@ -39,6 +39,12 @@ export type Database = {
         Update: { id?: string; workspace_id?: string; name?: string; slug?: string; description?: string | null; color?: string; created_by?: string | null; created_at?: string; updated_at?: string };
         Relationships: [];
       };
+      flow_folders: {
+        Row: { id: string; workspace_id: string; name: string; slug: string; description: string | null; color: string; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; workspace_id: string; name: string; slug: string; description?: string | null; color?: string; created_by?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; workspace_id?: string; name?: string; slug?: string; description?: string | null; color?: string; created_by?: string | null; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
       audiences: {
         Row: { id: string; workspace_id: string | null; name: string; description: string | null; contact_count: number; tags: string[]; created_at: string; updated_at: string };
         Insert: { id?: string; workspace_id?: string | null; name: string; description?: string | null; contact_count?: number; tags?: string[]; created_at?: string; updated_at?: string };
@@ -70,9 +76,9 @@ export type Database = {
         Relationships: [];
       };
       flows: {
-        Row: { id: string; workspace_id: string | null; trigger_id: string | null; audience_id: string | null; name: string; slug: string; description: string | null; status: string; trigger_type: string | null; timezone: string; settings: Json; stats: Json; published_at: string | null; created_by: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; workspace_id?: string | null; trigger_id?: string | null; audience_id?: string | null; name: string; slug: string; description?: string | null; status?: string; trigger_type?: string | null; timezone?: string; settings?: Json; stats?: Json; published_at?: string | null; created_by?: string | null; created_at?: string; updated_at?: string };
-        Update: { id?: string; workspace_id?: string | null; trigger_id?: string | null; audience_id?: string | null; name?: string; slug?: string; description?: string | null; status?: string; trigger_type?: string | null; timezone?: string; settings?: Json; stats?: Json; published_at?: string | null; created_by?: string | null; created_at?: string; updated_at?: string };
+        Row: { id: string; workspace_id: string | null; folder_id: string | null; trigger_id: string | null; audience_id: string | null; name: string; slug: string; description: string | null; status: string; trigger_type: string | null; timezone: string; settings: Json; stats: Json; published_at: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; workspace_id?: string | null; folder_id?: string | null; trigger_id?: string | null; audience_id?: string | null; name: string; slug: string; description?: string | null; status?: string; trigger_type?: string | null; timezone?: string; settings?: Json; stats?: Json; published_at?: string | null; created_by?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; workspace_id?: string | null; folder_id?: string | null; trigger_id?: string | null; audience_id?: string | null; name?: string; slug?: string; description?: string | null; status?: string; trigger_type?: string | null; timezone?: string; settings?: Json; stats?: Json; published_at?: string | null; created_by?: string | null; created_at?: string; updated_at?: string };
         Relationships: [];
       };
       flow_steps: {

@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       name?: string;
       description?: string | null;
+      folderId?: string | null;
     };
     const name = body.name?.trim();
 
@@ -24,10 +25,30 @@ export async function POST(request: Request) {
     }
 
     const workspaceId = await ensureWorkspaceForUser(user);
+    const folderId = body.folderId || null;
+
+    if (folderId) {
+      const { data: folder, error: folderError } = await supabase
+        .from("flow_folders")
+        .select("id")
+        .eq("id", folderId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+
+      if (folderError) {
+        throw folderError;
+      }
+
+      if (!folder) {
+        return NextResponse.json({ error: "Flow folder was not found." }, { status: 404 });
+      }
+    }
+
     const { data: flow, error } = await supabase
       .from("flows")
       .insert({
         workspace_id: workspaceId,
+        ...(folderId ? { folder_id: folderId } : {}),
         name,
         slug: `${slugify(name) || "flow"}-${Date.now()}`,
         description: body.description?.trim() || null,

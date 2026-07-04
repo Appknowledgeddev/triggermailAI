@@ -5,7 +5,9 @@ Run these files in the Supabase SQL editor:
 1. `00_bootstrap_workspaces.sql` only if Supabase says `relation "public.workspaces" does not exist`
 2. `schema.sql`
 3. `seed.sql` optional demo data
-4. `waitlist_signups.sql` if you want the public waiting-list form to store new access requests
+4. `template_folders.sql` if you want template folders
+5. `flow_folders.sql` if you want flow folders
+6. `waitlist_signups.sql` if you want the public waiting-list form to store new access requests
 
 If Supabase gives `syntax error at end of input`, the SQL editor likely received an incomplete paste. Use the smaller files in `chunks/` instead:
 
@@ -15,7 +17,9 @@ If Supabase gives `syntax error at end of input`, the SQL editor likely received
 4. `chunks/04_indexes_triggers.sql`
 5. `chunks/05_rls_policies.sql`
 6. `seed.sql` optional demo data
-7. `waitlist_signups.sql` if you want the public waiting-list form to store new access requests
+7. `template_folders.sql` if you want template folders
+8. `flow_folders.sql` if you want flow folders
+9. `waitlist_signups.sql` if you want the public waiting-list form to store new access requests
 
 ## Core Tables
 
