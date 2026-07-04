@@ -10,6 +10,16 @@ function slugify(value: string) {
     .slice(0, 48);
 }
 
+function getTemplateFolderError(error: unknown, fallback: string) {
+  const message = getErrorMessage(error, fallback);
+
+  if (/template_folders|PGRST205|schema cache/i.test(message)) {
+    return "Template folders are not installed in Supabase yet. Run supabase/template_folders.sql in the Supabase SQL Editor, then refresh this page.";
+  }
+
+  return message;
+}
+
 export async function GET(request: Request) {
   try {
     const { supabase, user } = await getAdminContext(request);
@@ -26,7 +36,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ folders: data || [] });
   } catch (error) {
-    return NextResponse.json({ error: getErrorMessage(error, "Template files could not be loaded.") }, { status: 500 });
+    return NextResponse.json({ error: getTemplateFolderError(error, "Template files could not be loaded.") }, { status: 500 });
   }
 }
 
@@ -64,6 +74,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ folder: data });
   } catch (error) {
-    return NextResponse.json({ error: getErrorMessage(error, "Template file could not be created.") }, { status: 500 });
+    return NextResponse.json({ error: getTemplateFolderError(error, "Template folder could not be created.") }, { status: 500 });
   }
 }
