@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, Filter, Folder, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
+import { FileText, Filter, Folder, FolderPlus, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Panel } from "@/components/panels";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/client";
@@ -132,6 +132,8 @@ export function TemplatesManager() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [folderFilter, setFolderFilter] = useState("all");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -287,6 +289,44 @@ export function TemplatesManager() {
     }
   }
 
+  async function handleCreateFolder(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newFolderName.trim();
+
+    if (!name) {
+      setError("Add a folder name first.");
+      return;
+    }
+
+    setCreatingFolder(true);
+    setError(null);
+
+    try {
+      const token = await getAccessToken();
+      const response = await fetch("/api/template-folders", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const payload = (await response.json()) as { folder?: TemplateFolder; error?: string };
+
+      if (!response.ok || !payload.folder) {
+        throw new Error(payload.error || "Template folder could not be created.");
+      }
+
+      setFolders((currentFolders) => [...currentFolders, payload.folder as TemplateFolder]);
+      setNewFolderName("");
+      setFolderFilter((currentFilter) => folders.length >= 1 ? payload.folder!.id : currentFilter);
+    } catch (createFolderError) {
+      setError(getErrorMessage(createFolderError, "Template folder could not be created."));
+    } finally {
+      setCreatingFolder(false);
+    }
+  }
+
   async function handleDeleteTemplate(template: EmailTemplate) {
     const confirmed = window.confirm(`Delete "${template.name}"? This will remove the template and its versions.`);
     if (!confirmed) {
@@ -379,6 +419,23 @@ export function TemplatesManager() {
               <RefreshCw size={15} />
               Refresh
             </button>
+            <form className="flex min-w-[250px] flex-1 items-center gap-2 sm:flex-none" onSubmit={handleCreateFolder}>
+              <input
+                aria-label="New folder name"
+                className="h-10 min-w-0 flex-1 rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-[13px] text-white outline-none placeholder:text-slate-500 sm:w-[180px]"
+                onChange={(event) => setNewFolderName(event.target.value)}
+                placeholder="New folder name"
+                value={newFolderName}
+              />
+              <button
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[8px] bg-fuchsia-600 px-3 text-[13px] font-semibold text-white transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={creatingFolder}
+                type="submit"
+              >
+                {creatingFolder ? <Loader2 className="animate-spin" size={15} /> : <FolderPlus size={15} />}
+                Folder
+              </button>
+            </form>
           </div>
 
           {error && (
