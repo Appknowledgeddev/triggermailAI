@@ -139,7 +139,6 @@ export function TemplatesManager() {
   const [error, setError] = useState<string | null>(null);
 
   const supabaseReady = hasSupabaseConfig();
-  const showFolderList = folders.length >= 2;
 
   const filteredTemplates = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -155,21 +154,6 @@ export function TemplatesManager() {
       return categoryMatches && folderMatches && queryMatches;
     });
   }, [categoryFilter, folderFilter, search, templates]);
-
-  const totals = useMemo(() => {
-    return templates.reduce(
-      (acc, template) => {
-        if (template.status === "published") {
-          acc.published += 1;
-        }
-        if (template.status === "draft") {
-          acc.draft += 1;
-        }
-        return acc;
-      },
-      { draft: 0, published: 0 },
-    );
-  }, [templates]);
 
   const getOrCreateWorkspace = useCallback(async () => {
     const supabase = createSupabaseBrowserClient();
@@ -256,12 +240,6 @@ export function TemplatesManager() {
     loadTemplates();
   }, [loadTemplates]);
 
-  useEffect(() => {
-    if (!showFolderList && folderFilter !== "all") {
-      setFolderFilter("all");
-    }
-  }, [folderFilter, showFolderList]);
-
   async function moveTemplateToFolder(template: EmailTemplate, nextFolderId: string) {
     setError(null);
 
@@ -319,7 +297,7 @@ export function TemplatesManager() {
 
       setFolders((currentFolders) => [...currentFolders, payload.folder as TemplateFolder]);
       setNewFolderName("");
-      setFolderFilter((currentFilter) => folders.length >= 1 ? payload.folder!.id : currentFilter);
+      setFolderFilter("all");
     } catch (createFolderError) {
       setError(getErrorMessage(createFolderError, "Template folder could not be created."));
     } finally {
@@ -370,7 +348,7 @@ export function TemplatesManager() {
       primaryActionHref="/templates/welcome-email"
       secondaryActionHref="#template-filters"
     >
-      <section className={`mt-4 grid gap-4 ${showFolderList ? "xl:grid-cols-[1fr_300px]" : ""}`}>
+      <section className="mt-4">
         <Panel>
           <div id="template-filters" className="flex scroll-mt-28 flex-wrap items-center gap-3">
             <div className="relative min-w-[220px] flex-1">
@@ -395,22 +373,6 @@ export function TemplatesManager() {
                 </option>
               ))}
             </select>
-            {showFolderList && (
-              <select
-                aria-label="Filter by file"
-                className="h-10 rounded-[8px] border border-white/10 bg-[#111827] px-3 text-[13px] text-white outline-none"
-                onChange={(event) => setFolderFilter(event.target.value)}
-                value={folderFilter}
-              >
-                <option value="all">All Files</option>
-                <option value="unfiled">Unfiled</option>
-                {folders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
-            )}
             <button
               className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-[13px] font-semibold text-slate-100 transition hover:bg-white/10"
               onClick={loadTemplates}
@@ -441,6 +403,47 @@ export function TemplatesManager() {
           {error && (
             <div className="mt-4 rounded-[8px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[13px] text-amber-200">
               {error} {signedOut && <Link className="font-semibold underline" href="/login">Go to sign in</Link>}
+            </div>
+          )}
+
+          {folders.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <Folder size={13} />
+                Folders
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === "all" ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
+                  onClick={() => setFolderFilter("all")}
+                  type="button"
+                >
+                  All templates
+                  <span className="text-xs text-slate-500">{templates.length}</span>
+                </button>
+                <button
+                  className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === "unfiled" ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
+                  onClick={() => setFolderFilter("unfiled")}
+                  type="button"
+                >
+                  Unfiled
+                  <span className="text-xs text-slate-500">{templates.filter((template) => !template.folder_id).length}</span>
+                </button>
+                {folders.map((folder) => {
+                  const count = templates.filter((template) => template.folder_id === folder.id).length;
+                  return (
+                    <button
+                      key={folder.id}
+                      className={`inline-flex h-9 max-w-full items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === folder.id ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
+                      onClick={() => setFolderFilter(folder.id)}
+                      type="button"
+                    >
+                      <span className="max-w-[180px] truncate">{folder.name}</span>
+                      <span className="text-xs text-slate-500">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -527,81 +530,6 @@ export function TemplatesManager() {
             )}
           </div>
         </Panel>
-
-        {showFolderList && (
-        <div className="grid gap-4">
-          <Panel>
-            <h2 className="text-base font-semibold text-white">Files</h2>
-            <div className="mt-4 grid gap-2">
-              <button
-                className={`flex items-center justify-between rounded-[8px] border px-3 py-2.5 text-left transition ${folderFilter === "all" ? "border-fuchsia-400/50 bg-fuchsia-400/10" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}
-                onClick={() => setFolderFilter("all")}
-                type="button"
-              >
-                <span className="text-[13px] font-semibold text-slate-200">All files</span>
-                <span className="text-sm font-semibold text-white">{templates.length}</span>
-              </button>
-              <button
-                className={`flex items-center justify-between rounded-[8px] border px-3 py-2.5 text-left transition ${folderFilter === "unfiled" ? "border-fuchsia-400/50 bg-fuchsia-400/10" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}
-                onClick={() => setFolderFilter("unfiled")}
-                type="button"
-              >
-                <span className="text-[13px] font-semibold text-slate-200">Unfiled</span>
-                <span className="text-sm font-semibold text-white">{templates.filter((template) => !template.folder_id).length}</span>
-              </button>
-              {folders.map((folder) => {
-                const count = templates.filter((template) => template.folder_id === folder.id).length;
-                return (
-                  <button
-                    key={folder.id}
-                    className={`flex items-center justify-between rounded-[8px] border px-3 py-2.5 text-left transition ${folderFilter === folder.id ? "border-fuchsia-400/50 bg-fuchsia-400/10" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}
-                    onClick={() => setFolderFilter(folder.id)}
-                    type="button"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-semibold text-slate-200">{folder.name}</span>
-                      {folder.description && <span className="mt-0.5 block truncate text-xs text-slate-500">{folder.description}</span>}
-                    </span>
-                    <span className="text-sm font-semibold text-white">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Panel>
-
-          <Panel>
-            <h2 className="text-base font-semibold text-white">Template Summary</h2>
-            <div className="mt-4 grid gap-3">
-              {[
-                ["Total templates", templates.length.toLocaleString("en-GB")],
-                ["Published", totals.published.toLocaleString("en-GB")],
-                ["Drafts", totals.draft.toLocaleString("en-GB")],
-                ["Categories", new Set(templates.map((template) => template.category)).size.toLocaleString("en-GB")],
-              ].map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between rounded-[8px] border border-white/10 bg-white/[0.03] p-3">
-                  <span className="text-[13px] text-slate-300">{label}</span>
-                  <span className="text-base font-semibold text-white">{value}</span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel>
-            <h2 className="text-base font-semibold text-white">Categories</h2>
-            <div className="mt-4 grid gap-2">
-              {categories.map((item) => {
-                const count = templates.filter((template) => template.category === item.value).length;
-                return (
-                  <div key={item.value} className="flex items-center justify-between rounded-[8px] border border-white/10 bg-white/[0.03] px-3 py-2.5">
-                    <span className="text-[13px] text-slate-300">{item.label}</span>
-                    <span className="text-sm font-semibold text-white">{count}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </Panel>
-        </div>
-        )}
       </section>
     </AppShell>
   );
