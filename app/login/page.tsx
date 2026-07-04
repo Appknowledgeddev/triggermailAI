@@ -7,9 +7,9 @@ export default function LoginPage() {
       eyebrow="Sign in"
       title="Welcome back"
       description="Sign in to manage your email automation workspace."
-      footerText="Don't have an account?"
+      footerText="Need access?"
       footerHref="/sign-up"
-      footerLink="Create account"
+      footerLink="Join waitlist"
     >
       <SignInForm />
     </AuthShell>

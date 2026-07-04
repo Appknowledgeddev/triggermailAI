@@ -38,7 +38,7 @@ export default function WebsiteHome() {
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/sign-up" className="inline-flex h-10 items-center gap-2 rounded-[7px] bg-gradient-to-r from-violet-brand to-fuchsia-600 px-4 text-sm font-semibold text-white shadow-lg shadow-fuchsia-950/15">
-                Create account
+                Join waitlist
                 <ArrowRight size={15} />
               </Link>
               <Link href="/login" className="inline-flex h-10 items-center rounded-[7px] border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">

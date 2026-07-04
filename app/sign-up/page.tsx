@@ -1,17 +1,17 @@
 import { AuthShell } from "@/components/auth-shell";
-import { SignUpForm } from "@/components/auth/sign-up-form";
+import { WaitlistForm } from "@/components/auth/waitlist-form";
 
 export default function SignUpPage() {
   return (
     <AuthShell
-      eyebrow="Create account"
-      title="Start your workspace"
-      description="Create an account for your Trigger Mail AI workspace."
-      footerText="Already have an account?"
+      eyebrow="Under development"
+      title="Access is opening soon"
+      description="Trigger Mail AI is not accepting new accounts yet. Join the waiting list and we'll let you know when access opens."
+      footerText="Already have access?"
       footerHref="/login"
       footerLink="Sign in"
     >
-      <SignUpForm />
+      <WaitlistForm />
     </AuthShell>
   );
 }
