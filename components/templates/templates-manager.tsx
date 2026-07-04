@@ -137,6 +137,7 @@ export function TemplatesManager() {
   const [error, setError] = useState<string | null>(null);
 
   const supabaseReady = hasSupabaseConfig();
+  const showFolderList = folders.length >= 2;
 
   const filteredTemplates = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -253,6 +254,12 @@ export function TemplatesManager() {
     loadTemplates();
   }, [loadTemplates]);
 
+  useEffect(() => {
+    if (!showFolderList && folderFilter !== "all") {
+      setFolderFilter("all");
+    }
+  }, [folderFilter, showFolderList]);
+
   async function moveTemplateToFolder(template: EmailTemplate, nextFolderId: string) {
     setError(null);
 
@@ -323,7 +330,7 @@ export function TemplatesManager() {
       primaryActionHref="/templates/welcome-email"
       secondaryActionHref="#template-filters"
     >
-      <section className="mt-4 grid gap-4 xl:grid-cols-[1fr_300px]">
+      <section className={`mt-4 grid gap-4 ${showFolderList ? "xl:grid-cols-[1fr_300px]" : ""}`}>
         <Panel>
           <div id="template-filters" className="flex scroll-mt-28 flex-wrap items-center gap-3">
             <div className="relative min-w-[220px] flex-1">
@@ -348,20 +355,22 @@ export function TemplatesManager() {
                 </option>
               ))}
             </select>
-            <select
-              aria-label="Filter by file"
-              className="h-10 rounded-[8px] border border-white/10 bg-[#111827] px-3 text-[13px] text-white outline-none"
-              onChange={(event) => setFolderFilter(event.target.value)}
-              value={folderFilter}
-            >
-              <option value="all">All Files</option>
-              <option value="unfiled">Unfiled</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
+            {showFolderList && (
+              <select
+                aria-label="Filter by file"
+                className="h-10 rounded-[8px] border border-white/10 bg-[#111827] px-3 text-[13px] text-white outline-none"
+                onChange={(event) => setFolderFilter(event.target.value)}
+                value={folderFilter}
+              >
+                <option value="all">All Files</option>
+                <option value="unfiled">Unfiled</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-[13px] font-semibold text-slate-100 transition hover:bg-white/10"
               onClick={loadTemplates}
@@ -462,6 +471,7 @@ export function TemplatesManager() {
           </div>
         </Panel>
 
+        {showFolderList && (
         <div className="grid gap-4">
           <Panel>
             <h2 className="text-base font-semibold text-white">Files</h2>
@@ -534,6 +544,7 @@ export function TemplatesManager() {
             </div>
           </Panel>
         </div>
+        )}
       </section>
     </AppShell>
   );
