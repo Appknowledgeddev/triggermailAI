@@ -377,6 +377,9 @@ export function TemplatesManager() {
   }
 
   const signedOut = error === "Sign in before managing templates.";
+  const folderOverview = folders.length > 1 && folderFilter === "all" && !search.trim() && categoryFilter === "all";
+  const selectedFolder = folders.find((folder) => folder.id === folderFilter);
+  const unfiledCount = templates.filter((template) => !template.folder_id).length;
 
   return (
     <AppShell
@@ -390,13 +393,6 @@ export function TemplatesManager() {
     >
       <section className="mt-4">
         <Panel>
-          {(() => {
-            const folderOverview = folders.length > 1 && folderFilter === "all" && !search.trim() && categoryFilter === "all";
-            const selectedFolder = folders.find((folder) => folder.id === folderFilter);
-            const unfiledCount = templates.filter((template) => !template.folder_id).length;
-
-            return (
-          <>
           <div id="template-filters" className="flex scroll-mt-28 flex-wrap items-center gap-3">
             <div className="relative min-w-[220px] flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
@@ -442,7 +438,7 @@ export function TemplatesManager() {
                 type="submit"
               >
                 {creatingFolder ? <Loader2 className="animate-spin" size={15} /> : <FolderPlus size={15} />}
-                Folder
+              Folder
               </button>
             </form>
           </div>
@@ -453,124 +449,48 @@ export function TemplatesManager() {
             </div>
           )}
 
-          {folders.length > 0 && (
-            <div className="mt-4 border-t border-white/10 pt-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                <Folder size={13} />
-                Folders
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {folders.length > 1 && (
-                  <button
-                    className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === "all" ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
-                    onClick={() => setFolderFilter("all")}
-                    type="button"
-                  >
-                    Folders
-                    <span className="text-xs text-slate-500">{folders.length}</span>
-                  </button>
-                )}
-                <button
-                  className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === "all_templates" || (folders.length <= 1 && folderFilter === "all") ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
-                  onClick={() => setFolderFilter(folders.length > 1 ? "all_templates" : "all")}
-                  type="button"
-                >
-                  All templates
-                  <span className="text-xs text-slate-500">{templates.length}</span>
-                </button>
-                <button
-                  className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === "unfiled" ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
-                  onClick={() => setFolderFilter("unfiled")}
-                  type="button"
-                >
-                  Unfiled
-                  <span className="text-xs text-slate-500">{templates.filter((template) => !template.folder_id).length}</span>
-                </button>
-                {folders.map((folder) => {
-                  const count = templates.filter((template) => template.folder_id === folder.id).length;
-                  return (
-                    <span
-                      key={folder.id}
-                      className={`inline-flex h-9 max-w-full items-center gap-2 rounded-[8px] border px-3 text-[13px] font-semibold transition ${folderFilter === folder.id ? "border-fuchsia-400/50 bg-fuchsia-400/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}
-                    >
-                      <button
-                        className="min-w-0 truncate text-left"
-                        onClick={() => setFolderFilter(folder.id)}
-                        type="button"
-                      >
-                        {folder.name}
-                      </button>
-                      <span className="text-xs text-slate-500">{count}</span>
-                      {count === 0 && (
-                        <button
-                          aria-label={`Delete ${folder.name}`}
-                          className="grid size-6 shrink-0 place-items-center rounded-[6px] text-slate-500 transition hover:bg-red-danger/15 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={deletingFolderId === folder.id}
-                          onClick={() => { void handleDeleteFolder(folder); }}
-                          type="button"
-                        >
-                          {deletingFolderId === folder.id ? <Loader2 className="animate-spin" size={13} /> : <Trash2 size={13} />}
-                        </button>
-                      )}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-5 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.02]">
-            {loading ? (
+          {loading ? (
+            <div className="mt-5 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.02]">
               <div className="flex items-center justify-center gap-2 px-4 py-12 text-sm text-slate-400">
                 <Loader2 className="animate-spin" size={17} />
                 Loading your templates...
               </div>
-            ) : folderOverview ? (
-              <div className="p-4">
-                <div className="mb-4">
-                  <h2 className="text-base font-semibold text-white">Folders</h2>
-                  <p className="mt-1 text-[13px] text-slate-500">Choose a folder to view its saved templates.</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {folders.map((folder) => {
-                    const count = templates.filter((template) => template.folder_id === folder.id).length;
-                    return (
-                      <article key={folder.id} className="rounded-[10px] border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]">
-                        <button className="block w-full text-left" onClick={() => setFolderFilter(folder.id)} type="button">
-                          <span className="grid size-10 place-items-center rounded-[9px] bg-fuchsia-400/10 text-fuchsia-300">
-                            <Folder size={19} />
-                          </span>
-                          <span className="mt-4 block truncate text-sm font-semibold text-white">{folder.name}</span>
-                          <span className="mt-1 block text-xs text-slate-500">{count} template{count === 1 ? "" : "s"}</span>
-                        </button>
-                        {count === 0 && (
-                          <button
-                            className="mt-4 inline-flex h-8 items-center gap-2 rounded-[7px] border border-red-danger/30 bg-red-danger/10 px-2 text-xs font-semibold text-red-200 transition hover:bg-red-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={deletingFolderId === folder.id}
-                            onClick={() => { void handleDeleteFolder(folder); }}
-                            type="button"
-                          >
-                            {deletingFolderId === folder.id ? <Loader2 className="animate-spin" size={13} /> : <Trash2 size={13} />}
-                            Delete
-                          </button>
-                        )}
-                      </article>
-                    );
-                  })}
-                  {unfiledCount > 0 && (
-                    <article className="rounded-[10px] border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]">
-                      <button className="block w-full text-left" onClick={() => setFolderFilter("unfiled")} type="button">
-                        <span className="grid size-10 place-items-center rounded-[9px] bg-white/[0.06] text-slate-300">
-                          <FileText size={19} />
-                        </span>
-                        <span className="mt-4 block truncate text-sm font-semibold text-white">Unfiled</span>
-                        <span className="mt-1 block text-xs text-slate-500">{unfiledCount} template{unfiledCount === 1 ? "" : "s"}</span>
+            </div>
+          ) : folderOverview ? (
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {folders.map((folder) => {
+                const count = templates.filter((template) => template.folder_id === folder.id).length;
+                return (
+                  <article key={folder.id} className="rounded-[10px] border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]">
+                    <button className="block w-full text-left" onClick={() => setFolderFilter(folder.id)} type="button">
+                      <Folder size={19} className="text-fuchsia-300" />
+                      <span className="mt-4 block truncate text-sm font-semibold text-white">{folder.name}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{count} template{count === 1 ? "" : "s"}</span>
+                    </button>
+                    {count === 0 && (
+                      <button
+                        className="mt-4 inline-flex h-8 items-center gap-2 rounded-[7px] border border-red-danger/30 bg-red-danger/10 px-2 text-xs font-semibold text-red-200 transition hover:bg-red-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={deletingFolderId === folder.id}
+                        onClick={() => { void handleDeleteFolder(folder); }}
+                        type="button"
+                      >
+                        {deletingFolderId === folder.id ? <Loader2 className="animate-spin" size={13} /> : <Trash2 size={13} />}
+                        Delete
                       </button>
-                    </article>
-                  )}
-                </div>
-              </div>
-            ) : filteredTemplates.length === 0 ? (
+                    )}
+                  </article>
+                );
+              })}
+              {unfiledCount > 0 && (
+                <button className="rounded-[10px] border border-white/10 bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06]" onClick={() => setFolderFilter("unfiled")} type="button">
+                  <FileText size={19} className="text-slate-300" />
+                  <span className="mt-4 block truncate text-sm font-semibold text-white">Unfiled</span>
+                  <span className="mt-1 block text-xs text-slate-500">{unfiledCount} template{unfiledCount === 1 ? "" : "s"}</span>
+                </button>
+              )}
+            </div>
+          ) : filteredTemplates.length === 0 ? (
+            <div className="mt-5 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.02]">
               <div className="px-4 py-12 text-center">
                 <div className="mx-auto grid size-11 place-items-center rounded-[9px] bg-violet-brand/15 text-fuchsia-300">
                   <FileText size={20} />
@@ -580,7 +500,16 @@ export function TemplatesManager() {
                   {selectedFolder ? "Move templates into this folder from the template row dropdown." : "Create a template to start building your reusable email library."}
                 </p>
               </div>
-            ) : (
+            </div>
+          ) : (
+            <>
+              {folders.length > 1 && folderFilter !== "all_templates" && (
+                <button className="mt-5 inline-flex h-9 items-center gap-2 rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-[13px] font-semibold text-slate-200 transition hover:bg-white/[0.08]" onClick={() => setFolderFilter("all")} type="button">
+                  <Folder size={14} />
+                  Back to folders
+                </button>
+              )}
+              <div className="mt-5 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.02]">
               <div className="divide-y divide-white/10">
                 {filteredTemplates.map((template) => (
                   <article key={template.id} className="grid gap-3 p-3 transition hover:bg-white/[0.04] lg:grid-cols-[112px_minmax(0,1fr)_150px_170px_130px] lg:items-center">
@@ -644,11 +573,9 @@ export function TemplatesManager() {
                   </article>
                 ))}
               </div>
-            )}
-          </div>
-          </>
-            );
-          })()}
+              </div>
+            </>
+          )}
         </Panel>
       </section>
     </AppShell>
