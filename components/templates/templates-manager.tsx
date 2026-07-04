@@ -380,6 +380,7 @@ export function TemplatesManager() {
   const folderOverview = folders.length > 1 && folderFilter === "all" && !search.trim() && categoryFilter === "all";
   const selectedFolder = folders.find((folder) => folder.id === folderFilter);
   const unfiledCount = templates.filter((template) => !template.folder_id).length;
+  const newTemplateHref = selectedFolder ? `/templates/welcome-email?folder=${selectedFolder.id}` : "/templates/welcome-email";
 
   return (
     <AppShell
@@ -388,7 +389,7 @@ export function TemplatesManager() {
       description="Create and manage the email templates saved in your Supabase project."
       primaryAction="New Template"
       secondaryAction="All Categories"
-      primaryActionHref="/templates/welcome-email"
+      primaryActionHref={newTemplateHref}
       secondaryActionHref="#template-filters"
     >
       <section className="mt-4">

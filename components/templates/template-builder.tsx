@@ -1080,6 +1080,7 @@ export function TemplateBuilder() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTemplateId = searchParams.get("template");
+  const requestedFolderId = searchParams.get("folder");
   const codeRef = useRef<HTMLTextAreaElement | null>(null);
   const assetInputRef = useRef<HTMLInputElement | null>(null);
   const aiFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -3166,6 +3167,7 @@ export function TemplateBuilder() {
           preheader,
           fromName,
           fromEmail,
+          folderId: templateId ? undefined : requestedFolderId,
           html: htmlForSave,
           customHead,
           aiMessages: aiMessages.slice(-80),
