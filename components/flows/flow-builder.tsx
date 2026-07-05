@@ -214,6 +214,19 @@ function getConfigStringRecord(config: Json, key: string): Record<string, string
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 }
 
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Not yet";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 function getCanvasPosition(value: Json | undefined): CanvasPosition | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -574,6 +587,11 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     ...flattenJsonPaths(liveRun?.payload || null),
     ...flattenJsonPaths(parseSamplePayloadSafely(triggerDraft.samplePayload)),
   ])).slice(0, 18);
+  const selectedModulePosition = selectedPanel === "trigger"
+    ? triggerPosition
+    : selectedStep && selectedStepIndex > -1
+      ? getStepCanvasPosition(selectedStep, selectedStepIndex)
+      : null;
 
   useEffect(() => {
     const viewport = canvasViewportRef.current;
@@ -2322,6 +2340,119 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                         Use the plus button to add the next module.
                       </div>
                     )}
+
+                    {selectedModulePosition && (
+                      <div
+                        className="absolute z-30 w-[340px] rounded-[12px] border border-white/10 bg-[#0D121C]/96 p-3 text-sm shadow-[0_24px_70px_rgba(0,0,0,0.48)] backdrop-blur"
+                        data-canvas-control="true"
+                        style={{
+                          left: selectedModulePosition.x + 92,
+                          top: Math.max(20, selectedModulePosition.y - 118),
+                        }}
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-fuchsia-200">Module settings</p>
+                            <h3 className="mt-1 truncate text-sm font-semibold text-white">
+                              {selectedPanel === "trigger" ? (triggerDraft.eventName || "Trigger") : selectedStep?.name || "Module"}
+                            </h3>
+                          </div>
+                          <button className="grid size-7 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white" onClick={() => setActiveInspectorTab("modules")} type="button">
+                            <Plus size={14} />
+                          </button>
+                        </div>
+
+                        {selectedPanel === "trigger" ? (
+                          <div className="space-y-2">
+                            <label className="block">
+                              <span className="text-xs font-semibold text-slate-400">Trigger type</span>
+                              <select className="mt-1 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-2 text-sm text-white outline-none" value={triggerDraft.triggerType} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, triggerType: event.target.value }))}>
+                                {triggerTypes.map((trigger) => (
+                                  <option key={trigger.value} value={trigger.value}>{trigger.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-semibold text-slate-400">Event name</span>
+                              <input className="mt-1 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-2 text-sm text-white outline-none" value={triggerDraft.eventName} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, eventName: event.target.value }))} />
+                            </label>
+                            {(triggerDraft.triggerType === "webhook" || triggerDraft.triggerType === "api") && (
+                              <div className="rounded-[8px] border border-fuchsia-300/20 bg-fuchsia-400/10 p-2 text-xs leading-5 text-fuchsia-50">
+                                <span className="font-semibold">Webhook:</span> <code className="break-all">{webhookEndpoint || webhookEndpointPath}</code>
+                              </div>
+                            )}
+                            <label className="block">
+                              <span className="text-xs font-semibold text-slate-400">Sample payload</span>
+                              <textarea className="mt-1 min-h-[92px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-2 py-2 font-mono text-xs leading-5 text-slate-100 outline-none" value={triggerDraft.samplePayload} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, samplePayload: event.target.value }))} />
+                            </label>
+                          </div>
+                        ) : selectedStep ? (
+                          <div className="space-y-2">
+                            <label className="block">
+                              <span className="text-xs font-semibold text-slate-400">Module name</span>
+                              <input className="mt-1 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-2 text-sm text-white outline-none" value={selectedStep.name} onChange={(event) => updateSelectedStepName(event.target.value)} />
+                            </label>
+                            {selectedStep.type === "email" && (
+                              <>
+                                <label className="block">
+                                  <span className="text-xs font-semibold text-slate-400">Email template</span>
+                                  <select className="mt-1 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-2 text-sm text-white outline-none" value={selectedStep.template_id || ""} onChange={(event) => applyTemplateToSelectedStep(event.target.value)}>
+                                    <option value="">Choose template...</option>
+                                    {templates.map((template) => (
+                                      <option key={template.id} value={template.id}>{template.name}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="block">
+                                  <span className="text-xs font-semibold text-slate-400">Send to</span>
+                                  <input className="mt-1 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-2 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "recipientEmail", "{{trigger.email}}")} onChange={(event) => updateSelectedStepConfig("recipientEmail", event.target.value)} />
+                                </label>
+                                {selectedEmailTemplate && (
+                                  <div className="max-h-48 space-y-2 overflow-auto rounded-[8px] border border-emerald-300/15 bg-emerald-400/10 p-2">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Data mapping</p>
+                                    {selectedEmailTemplate.variables.map((variable) => {
+                                      const data = getConfigStringRecord(selectedStep.config, "handlebarData");
+                                      const currentValue = data[variable] ?? "";
+                                      const selectedTriggerPath = currentValue.match(/^\{\{\s*trigger\.([\w.]+)\s*\}\}$/)?.[1] || "";
+                                      return (
+                                        <label key={variable} className="block">
+                                          <span className="font-mono text-xs text-emerald-100">{`{{${variable}}}`}</span>
+                                          <select
+                                            className="mt-1 h-8 w-full rounded-[7px] border border-white/10 bg-[#111827] px-2 text-xs text-white outline-none"
+                                            value={selectedTriggerPath || (currentValue ? "__custom" : "")}
+                                            onChange={(event) => updateSelectedStepHandlebarData(variable, event.target.value === "__custom" ? currentValue : event.target.value ? `{{trigger.${event.target.value}}}` : "")}
+                                          >
+                                            <option value="">Choose webhook field...</option>
+                                            {triggerPayloadPaths.map((path) => (
+                                              <option key={path} value={path}>{path}</option>
+                                            ))}
+                                            <option value="__custom">Manual</option>
+                                          </select>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {selectedStep.type === "wait" && (
+                              <div className="grid grid-cols-[1fr_120px] gap-2">
+                                <input className="h-9 rounded-[8px] border border-white/10 bg-white/[0.04] px-2 text-sm text-white outline-none" min="1" type="number" value={getConfigString(selectedStep.config, "duration", "1")} onChange={(event) => updateSelectedStepConfig("duration", event.target.value)} />
+                                <select className="h-9 rounded-[8px] border border-white/10 bg-[#111827] px-2 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "unit", "days")} onChange={(event) => updateSelectedStepConfig("unit", event.target.value)}>
+                                  <option value="minutes">Minutes</option>
+                                  <option value="hours">Hours</option>
+                                  <option value="days">Days</option>
+                                </select>
+                              </div>
+                            )}
+                            <label className="block">
+                              <span className="text-xs font-semibold text-slate-400">Notes</span>
+                              <textarea className="mt-1 min-h-[64px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-2 py-2 text-sm leading-5 text-slate-100 outline-none" value={getConfigString(selectedStep.config, "notes")} onChange={(event) => updateSelectedStepConfig("notes", event.target.value)} />
+                            </label>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </>
                 )}
                 </div>
@@ -2332,960 +2463,89 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
 
         <aside className="flex min-h-0 flex-col border-t border-white/10 bg-[#0D121C] xl:border-l xl:border-t-0">
           <div className="border-b border-white/10 p-4 pb-3">
-            <h2 className="text-base font-semibold text-white">
-              {!triggerAdded ? "Add first module" : selectedPanel === "trigger" ? "Trigger settings" : selectedStep ? `${getStepType(selectedStep.type).label} settings` : "Module inspector"}
-            </h2>
-            <p className="text-xs leading-5 text-slate-500">
-              {!triggerAdded ? "Start from a blank flow by choosing the trigger module." : selectedPanel === "trigger" ? "Update the module that starts this flow." : "Click a module on the canvas to update what it does."}
-            </p>
-
-            {triggerAdded && (
-              <div className="mt-3 grid grid-cols-3 gap-1.5 rounded-[9px] border border-white/10 bg-[#070b12] p-1">
-                {[
-                  { key: "settings" as const, label: "Settings", icon: Settings },
-                  { key: "data" as const, label: "Live data", icon: Play },
-                  { key: "modules" as const, label: "Add module", icon: Plus },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    aria-label={tab.label}
-                    className={`group relative grid h-9 place-items-center rounded-[7px] transition ${activeInspectorTab === tab.key ? "bg-violet-brand text-white shadow-lg shadow-violet-950/30" : "text-slate-400 hover:bg-white/10 hover:text-white"}`}
-                    onClick={() => setActiveInspectorTab(tab.key)}
-                    title={tab.label}
-                    type="button"
-                  >
-                    <tab.icon size={16} />
-                    <span className="pointer-events-none absolute right-1/2 top-full z-20 mt-2 translate-x-1/2 whitespace-nowrap rounded-[7px] border border-white/10 bg-[#111827] px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-[0_14px_34px_rgba(0,0,0,0.42)] transition group-hover:opacity-100">
-                      {tab.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-fuchsia-300">Flow AI</p>
+            <h2 className="mt-1 text-base font-semibold text-white">Run conversation</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Use this space to reason about webhook data, module results, and what should happen next.</p>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {(!triggerAdded || activeInspectorTab === "settings") && (!triggerAdded ? (
-            <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Trigger modules</p>
-              <div className="space-y-2">
-                {triggerTypes.map((trigger) => (
-                  <button key={trigger.value} className="flex w-full items-start gap-3 rounded-[8px] border border-white/10 bg-white/[0.04] p-3 text-left transition hover:border-fuchsia-400/50 hover:bg-white/[0.08]" onClick={() => addTriggerModule(trigger.value)} type="button">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-[7px] bg-violet-brand/15 text-fuchsia-300">
-                      <trigger.icon size={16} />
-                    </span>
-                    <span>
-                      <span className="block text-sm font-semibold text-white">{trigger.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-slate-500">{trigger.description}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : selectedPanel === "trigger" ? (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Trigger module</p>
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-400">Trigger type</span>
-                <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={triggerDraft.triggerType} onChange={(event) => {
-                  const nextType = event.target.value;
-                  setTriggerDraft((draft) => {
-                    const nextAddress = draft.mailhookAddress || makeMailhookAddress(flowId);
-                    return {
-                      ...draft,
-                      triggerType: nextType,
-                      ...(nextType === "mailhook" ? { mailhookAddress: nextAddress, source: nextAddress } : {}),
-                    };
-                  });
-                }}>
-                  {triggerTypes.map((trigger) => (
-                    <option key={trigger.value} value={trigger.value}>{trigger.label}</option>
-                  ))}
-                </select>
-                <span className="mt-1.5 block text-xs leading-5 text-slate-500">{triggerTypes.find((trigger) => trigger.value === triggerDraft.triggerType)?.description}</span>
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-400">Event name</span>
-                <input ref={moduleTitleInputRef} className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" value={triggerDraft.eventName} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, eventName: event.target.value }))} />
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-400">Source</span>
-                <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Website form, Stripe, Zapier..." value={triggerDraft.source} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, source: event.target.value }))} />
-              </label>
-
-              <label className="block">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                  <StickyNote size={13} />
-                  Notes
-                </span>
-                <textarea
-                  className="mt-1.5 min-h-[78px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 text-sm leading-5 text-slate-100 outline-none"
-                  onChange={(event) => setTriggerDraft((draft) => ({ ...draft, notes: event.target.value }))}
-                  placeholder="Add setup notes, mapping details, or reminders for this trigger."
-                  value={triggerDraft.notes}
-                />
-              </label>
-
-              {triggerDraft.triggerType === "mailhook" && (
-                <div className="rounded-[9px] border border-cyan-300/20 bg-cyan-300/10 p-3">
-                  <label className="block">
-                    <span className="text-xs font-semibold text-cyan-100">Inbound email address</span>
-                    <input className="mt-1.5 h-9 w-full rounded-[8px] border border-cyan-200/20 bg-[#07131c] px-3 text-sm text-cyan-50 outline-none" value={triggerDraft.mailhookAddress} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, mailhookAddress: event.target.value, source: event.target.value }))} />
-                  </label>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <p className="text-xs leading-5 text-cyan-100/70">Send emails to this address to start the flow.</p>
-                    <button className="shrink-0 rounded-[7px] border border-cyan-200/20 px-2 py-1 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-200/10" onClick={() => setTriggerDraft((draft) => ({ ...draft, mailhookAddress: makeMailhookAddress(flowId), source: makeMailhookAddress(flowId) }))} type="button">
-                      Reset
-                    </button>
-                  </div>
-                  <div className="mt-3 rounded-[8px] border border-cyan-200/15 bg-black/20 p-2">
-                    <p className="text-xs font-semibold text-cyan-100">Provider webhook URL</p>
-                    <code className="mt-1 block break-all text-xs leading-5 text-cyan-50">/api/inbound/mailhook</code>
-                  </div>
-                </div>
-              )}
-
-              {triggerDraft.triggerType === "schedule" && (
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-400">Schedule</span>
-                  <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="0 9 * * 1" value={triggerDraft.scheduleCron} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, scheduleCron: event.target.value }))} />
-                </label>
-              )}
-
-              {(triggerDraft.triggerType === "webhook" || triggerDraft.triggerType === "api") && (
-                <>
-                  <div className="rounded-[9px] border border-fuchsia-300/20 bg-fuchsia-400/10 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-fuchsia-100">Webhook endpoint</p>
-                        <code className="mt-1 block break-all text-xs leading-5 text-fuchsia-50">{webhookEndpoint || webhookEndpointPath}</code>
-                      </div>
-                      <div className="flex shrink-0 flex-col gap-1.5">
-                        <button className="rounded-[7px] border border-fuchsia-200/20 px-2 py-1 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-200/10" onClick={() => { void copyWebhookEndpoint(); }} type="button">
-                          {copiedEndpoint ? "Copied" : "Copy"}
-                        </button>
-                        <button className="rounded-[7px] border border-emerald-200/20 bg-emerald-400/10 px-2 py-1 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-60" disabled={webhookTestSending || saving} onClick={() => { void sendWebhookTestPayload(); }} type="button">
-                          {webhookTestSending ? "Sending" : "Send test"}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-xs leading-5 text-fuchsia-100/70">Send a POST request here to start this flow and see the payload in live data. Use Send test to prove this endpoint works locally.</p>
-                  </div>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Auth mode</span>
-                    <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={triggerDraft.authMode} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, authMode: event.target.value }))}>
-                      <option value="none">No auth</option>
-                      <option value="secret">Shared secret</option>
-                      <option value="signature">Signed request</option>
-                    </select>
-                  </label>
-                </>
-              )}
-
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-400">Sample payload</span>
-                <textarea className="mt-1.5 min-h-[100px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 font-mono text-xs leading-5 text-slate-100 outline-none" value={triggerDraft.samplePayload} onChange={(event) => setTriggerDraft((draft) => ({ ...draft, samplePayload: event.target.value }))} />
-              </label>
-
-            </div>
-          ) : selectedStep ? (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Selected module</p>
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-400">Module name</span>
-                <input ref={moduleTitleInputRef} className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" value={selectedStep.name} onChange={(event) => updateSelectedStepName(event.target.value)} />
-              </label>
-
-              <label className="block">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                  <StickyNote size={13} />
-                  Notes
-                </span>
-                <textarea
-                  className="mt-1.5 min-h-[78px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 text-sm leading-5 text-slate-100 outline-none"
-                  onChange={(event) => updateSelectedStepConfig("notes", event.target.value)}
-                  placeholder="Add mapping notes, assumptions, or follow-up reminders for this module."
-                  value={getConfigString(selectedStep.config, "notes")}
-                />
-              </label>
-
-              {selectedStep.type === "email" && (
-                <>
-                  <div className="rounded-[9px] border border-white/10 bg-[#070b12] p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Gmail module type</p>
-                    <div className="mt-3 max-h-72 space-y-4 overflow-auto pr-1">
-                      {["Email", "Draft", "Attachment", "Other"].map((category) => (
-                        <div key={category}>
-                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{category}</p>
-                          <div className="space-y-1.5">
-                            {emailModuleActions.filter((action) => action.category === category).map((action) => (
-                              <button
-                                key={action.value}
-                                className={`flex w-full items-start gap-2 rounded-[8px] border p-2 text-left transition ${getEmailAction(selectedStep.config) === action.value ? "border-fuchsia-300/40 bg-violet-brand/25 text-white" : "border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white"}`}
-                                onClick={() => {
-                                  updateSelectedStepConfig("emailAction", action.value);
-                                  if (selectedStep.name === "Send email" || selectedStep.name === "Retrieve emails" || selectedStep.name === "Search emails") {
-                                    updateSelectedStepName(action.label);
-                                  }
-                                }}
-                                type="button"
-                              >
-                                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] bg-white/10 text-fuchsia-200">
-                                  <action.icon size={14} />
-                                </span>
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-black">{getConfigString(selectedStep.config, "emailProvider", "gmail") === "outlook" ? "Outlook" : action.provider}</span>
-                                  <span className="block truncate text-sm font-semibold">{action.label}</span>
-                                  <span className="mt-0.5 block text-xs leading-4 text-slate-500">{action.description}</span>
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {getEmailAction(selectedStep.config) !== "send" ? (
-                    <>
-                      <label className="block">
-                        <span className="text-xs font-semibold text-slate-400">Mailbox account</span>
-                        <select
-                          className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none"
-                          value={getConfigString(selectedStep.config, "sendingAccountId", "") || defaultConnectedSendingAccount?.id || ""}
-                          onChange={(event) => {
-                            const selectedValue = event.target.value;
-                            const account = connectedAccounts.find((item) => item.id === selectedValue);
-                            updateSelectedStepConfig("sendingAccountId", selectedValue);
-                            updateSelectedStepConfig("sendingAccountProvider", account?.provider || "");
-                          }}
-                        >
-                          <option value="">Choose Gmail or Outlook</option>
-                          {connectedAccounts.filter((account) => account.provider === "gmail" || account.provider === "outlook").map((account) => (
-                            <option key={account.id} value={account.id}>
-                              {account.provider.toUpperCase()} - {account.email} ({account.status})
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1.5 text-xs leading-5 text-slate-500">Use a connected mailbox for this {getConfigString(selectedStep.config, "emailProvider", "gmail") === "outlook" ? "Outlook" : "Gmail"} action. Some actions may require reconnecting with newer scopes.</p>
-                      </label>
-
-                      {getEmailAction(selectedStep.config) === "search" && (
-                        <div className="rounded-[9px] border border-sky-300/15 bg-sky-400/10 p-3">
-                          <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-100">
-                            <Search size={14} />
-                            Search emails
-                          </div>
-                          <div className="space-y-3">
-                            <label className="block">
-                              <span className="text-xs font-semibold text-slate-400">Search query</span>
-                              <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="from:customer@example.com newer_than:7d" value={getConfigString(selectedStep.config, "retrieveQuery")} onChange={(event) => updateSelectedStepConfig("retrieveQuery", event.target.value)} />
-                            </label>
-                            <div className="grid grid-cols-2 gap-2">
-                              <label className="block">
-                                <span className="text-xs font-semibold text-slate-400">From contains</span>
-                                <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="@company.com" value={getConfigString(selectedStep.config, "retrieveFrom")} onChange={(event) => updateSelectedStepConfig("retrieveFrom", event.target.value)} />
-                              </label>
-                              <label className="block">
-                                <span className="text-xs font-semibold text-slate-400">Subject contains</span>
-                                <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="invoice" value={getConfigString(selectedStep.config, "retrieveSubject")} onChange={(event) => updateSelectedStepConfig("retrieveSubject", event.target.value)} />
-                              </label>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <label className="block">
-                                <span className="text-xs font-semibold text-slate-400">Max results</span>
-                                <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" min="1" max="50" type="number" value={getConfigString(selectedStep.config, "retrieveLimit", "10")} onChange={(event) => updateSelectedStepConfig("retrieveLimit", event.target.value)} />
-                              </label>
-                              <label className="block">
-                                <span className="text-xs font-semibold text-slate-400">Since</span>
-                                <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "retrieveSince", "7d")} onChange={(event) => updateSelectedStepConfig("retrieveSince", event.target.value)}>
-                                  <option value="1d">Last day</option>
-                                  <option value="7d">Last 7 days</option>
-                                  <option value="30d">Last 30 days</option>
-                                  <option value="all">Any time</option>
-                                </select>
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {["reply", "get", "copy", "move", "update_labels", "mark_read", "mark_unread", "delete", "list_attachments"].includes(getEmailAction(selectedStep.config)) && (
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-400">Email message ID</span>
-                          <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="{{module_1.latest.id}} or Gmail message id" value={getConfigString(selectedStep.config, "messageId")} onChange={(event) => updateSelectedStepConfig("messageId", event.target.value)} />
-                        </label>
-                      )}
-
-                      {["copy", "move"].includes(getEmailAction(selectedStep.config)) && (
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-400">Destination folder / label</span>
-                          <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Inbox, Work, Follow up..." value={getConfigString(selectedStep.config, "destinationLabel")} onChange={(event) => updateSelectedStepConfig("destinationLabel", event.target.value)} />
-                        </label>
-                      )}
-
-                      {getEmailAction(selectedStep.config) === "update_labels" && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="block">
-                            <span className="text-xs font-semibold text-slate-400">Add labels</span>
-                            <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Important, Lead" value={getConfigString(selectedStep.config, "addLabels")} onChange={(event) => updateSelectedStepConfig("addLabels", event.target.value)} />
-                          </label>
-                          <label className="block">
-                            <span className="text-xs font-semibold text-slate-400">Remove labels</span>
-                            <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Unread, Inbox" value={getConfigString(selectedStep.config, "removeLabels")} onChange={(event) => updateSelectedStepConfig("removeLabels", event.target.value)} />
-                          </label>
-                        </div>
-                      )}
-
-                      {getEmailAction(selectedStep.config) === "send_draft" && (
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-400">Draft ID</span>
-                          <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="{{module_1.draftId}} or Gmail draft id" value={getConfigString(selectedStep.config, "draftId")} onChange={(event) => updateSelectedStepConfig("draftId", event.target.value)} />
-                        </label>
-                      )}
-
-                      {getEmailAction(selectedStep.config) === "create_draft" && (
-                        <div className="space-y-3 rounded-[9px] border border-fuchsia-300/15 bg-fuchsia-400/10 p-3">
-                          <label className="block">
-                            <span className="text-xs font-semibold text-slate-400">To</span>
-                            <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="person@example.com or {{trigger.email}}" value={getConfigString(selectedStep.config, "draftTo")} onChange={(event) => updateSelectedStepConfig("draftTo", event.target.value)} />
-                          </label>
-                          <label className="block">
-                            <span className="text-xs font-semibold text-slate-400">Subject</span>
-                            <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Draft subject" value={getConfigString(selectedStep.config, "draftSubject")} onChange={(event) => updateSelectedStepConfig("draftSubject", event.target.value)} />
-                          </label>
-                          <label className="block">
-                            <span className="text-xs font-semibold text-slate-400">Body</span>
-                            <textarea className="mt-1.5 min-h-[96px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 text-sm leading-5 text-slate-100 outline-none" placeholder="Draft body..." value={getConfigString(selectedStep.config, "draftBody")} onChange={(event) => updateSelectedStepConfig("draftBody", event.target.value)} />
-                          </label>
-                        </div>
-                      )}
-
-                      {getEmailAction(selectedStep.config) === "api_call" && (
-                        <div className="space-y-3 rounded-[9px] border border-violet-300/15 bg-violet-400/10 p-3">
-                          <div className="grid grid-cols-[110px_1fr] gap-2">
-                            <label className="block">
-                              <span className="text-xs font-semibold text-slate-400">Method</span>
-                              <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "apiMethod", "GET")} onChange={(event) => updateSelectedStepConfig("apiMethod", event.target.value)}>
-                                <option value="GET">GET</option>
-                                <option value="POST">POST</option>
-                                <option value="PUT">PUT</option>
-                                <option value="PATCH">PATCH</option>
-                                <option value="DELETE">DELETE</option>
-                              </select>
-                            </label>
-                            <label className="block">
-                              <span className="text-xs font-semibold text-slate-400">Gmail API path</span>
-                              <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="/gmail/v1/users/me/messages" value={getConfigString(selectedStep.config, "apiPath")} onChange={(event) => updateSelectedStepConfig("apiPath", event.target.value)} />
-                            </label>
-                          </div>
-                          <label className="block">
-                            <span className="text-xs font-semibold text-slate-400">Body JSON</span>
-                            <textarea className="mt-1.5 min-h-[96px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 font-mono text-xs leading-5 text-slate-100 outline-none" placeholder={'{\n  "labelIds": ["INBOX"]\n}'} value={getConfigString(selectedStep.config, "apiBody")} onChange={(event) => updateSelectedStepConfig("apiBody", event.target.value)} />
-                          </label>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Template</span>
-                    <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={selectedStep.template_id || ""} onChange={(event) => applyTemplateToSelectedStep(event.target.value)}>
-                      <option value="">Choose a template</option>
-                      {templates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name} - {template.subject}
-                        </option>
-                      ))}
-                    </select>
-                  {templates.length === 0 && (
-                      <span className="mt-1.5 block text-xs leading-5 text-slate-500">No templates found yet. Create one in Templates first.</span>
-                    )}
-                  </label>
-
-                  <div className="relative rounded-[9px] border border-white/10 bg-white/[0.035] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="min-w-0 flex-1">
-                        <span className="text-xs font-semibold text-slate-400">Send to email</span>
-                        <input
-                          className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none"
-                          placeholder="person@example.com or {{trigger.email}}"
-                          value={getConfigString(selectedStep.config, "recipientEmail", "{{trigger.email}}")}
-                          onChange={(event) => updateSelectedStepConfig("recipientEmail", event.target.value)}
-                        />
-                      </label>
-                      <button
-                        className="mt-5 h-9 shrink-0 rounded-[7px] border border-emerald-200/20 px-2.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/15"
-                        onClick={() => setActiveDataPickerVariable(activeDataPickerVariable === "__recipientEmail" ? null : "__recipientEmail")}
-                        type="button"
-                      >
-                        Pick
-                      </button>
-                    </div>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">This email module will send the selected template to this address or token.</p>
-
-                    {activeDataPickerVariable === "__recipientEmail" && (
-                      <div className="absolute right-3 top-20 z-30 w-[min(320px,calc(100vw-48px))] rounded-[10px] border border-white/10 bg-[#0D121C] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.5)]">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Pick recipient</p>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">Choose an email value from flow data.</p>
-                          </div>
-                          <button className="text-xs font-semibold text-slate-400 transition hover:text-white" onClick={() => setActiveDataPickerVariable(null)} type="button">
-                            Close
-                          </button>
-                        </div>
-
-                        <div className="mt-3 max-h-72 space-y-3 overflow-auto pr-1">
-                          <div>
-                            <p className="mb-1.5 text-xs font-semibold text-slate-400">Trigger payload</p>
-                            <div className="space-y-1">
-                              {triggerPayloadPaths.length > 0 ? triggerPayloadPaths.map((path) => (
-                                <button
-                                  key={path}
-                                  className="flex w-full items-center justify-between gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs text-slate-200 transition hover:bg-white/10"
-                                  onClick={() => { updateSelectedStepConfig("recipientEmail", `{{trigger.${path}}}`); setActiveDataPickerVariable(null); }}
-                                  type="button"
-                                >
-                                  <span className="truncate">{path}</span>
-                                  <code className="shrink-0 text-[11px] text-emerald-200">{`{{trigger.${path}}}`}</code>
-                                </button>
-                              )) : (
-                                <p className="rounded-[7px] border border-dashed border-white/10 p-2 text-xs leading-5 text-slate-500">No trigger fields found yet.</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {previousSteps.length > 0 && (
-                            <div>
-                              <p className="mb-1.5 text-xs font-semibold text-slate-400">Earlier modules</p>
-                              <div className="space-y-2">
-                                {previousSteps.map((step, index) => {
-                                  const moduleToken = `module_${index + 1}`;
-                                  return (
-                                    <div key={step.id} className="rounded-[8px] border border-white/10 bg-white/[0.03] p-2">
-                                      <p className="truncate text-xs font-semibold text-white">{step.name}</p>
-                                      <div className="mt-1 space-y-1">
-                                        {makeModuleOutputFields(step).map((field) => (
-                                          <button
-                                            key={`${step.id}-${field}`}
-                                            className="flex w-full items-center justify-between gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs text-slate-200 transition hover:bg-white/10"
-                                            onClick={() => { updateSelectedStepConfig("recipientEmail", `{{${moduleToken}.${field}}}`); setActiveDataPickerVariable(null); }}
-                                            type="button"
-                                          >
-                                            <span className="truncate">{field}</span>
-                                            <code className="shrink-0 text-[11px] text-emerald-200">{`{{${moduleToken}.${field}}}`}</code>
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Send from account</span>
-                    <select
-                      className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none"
-                      value={getConfigString(selectedStep.config, "sendingAccountId", "") || defaultConnectedSendingAccount?.id || "resend"}
-                      onChange={(event) => {
-                        const selectedValue = event.target.value;
-                        if (selectedValue === "resend") {
-                          updateSelectedStepConfig("sendingAccountId", "");
-                          updateSelectedStepConfig("sendingAccountProvider", "resend");
-                          return;
-                        }
-
-                        const account = connectedAccounts.find((item) => item.id === selectedValue);
-                        updateSelectedStepConfig("sendingAccountId", selectedValue);
-                        updateSelectedStepConfig("sendingAccountProvider", account?.provider || "resend");
-                      }}
-                    >
-                      <option value="resend">Workspace sender / Resend</option>
-                      {connectedAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.provider.toUpperCase()} - {account.email} ({account.status})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1.5 text-xs leading-5 text-slate-500">If no account is selected, the latest connected Gmail or Outlook mailbox will be used before Resend.</p>
-                  </label>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Subject</span>
-                    <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Welcome to Trigger Mail AI" value={getConfigString(selectedStep.config, "subject")} onChange={(event) => updateSelectedStepConfig("subject", event.target.value)} />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Preheader</span>
-                    <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Short preview text" value={getConfigString(selectedStep.config, "preheader")} onChange={(event) => updateSelectedStepConfig("preheader", event.target.value)} />
-                  </label>
-
-                  {selectedEmailTemplate && (
-                    <div className="rounded-[9px] border border-white/10 bg-white/[0.035] p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-white">{selectedEmailTemplate.name}</p>
-                          <p className="mt-1 truncate text-xs text-slate-500">{selectedEmailTemplate.category} / {selectedEmailTemplate.status}</p>
-                        </div>
-                        <Link className="shrink-0 rounded-[7px] border border-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10" href={`/templates/welcome-email?template=${selectedEmailTemplate.id}`}>
-                          Open
-                        </Link>
-                      </div>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-400">
-                        <p><span className="font-semibold text-slate-300">To:</span> {getConfigString(selectedStep.config, "recipientEmail", "{{trigger.email}}")}</p>
-                        <p><span className="font-semibold text-slate-300">From:</span> {selectedEmailTemplate.from_name || "Default sender"} {selectedEmailTemplate.from_email ? `<${selectedEmailTemplate.from_email}>` : ""}</p>
-                        {selectedEmailTemplate.reply_to && <p><span className="font-semibold text-slate-300">Reply-to:</span> {selectedEmailTemplate.reply_to}</p>}
-                      </div>
-                      <div className="mt-3 rounded-[8px] border border-white/10 bg-[#070b12] p-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-semibold text-white">Module send test</p>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">Sends this selected template using this module recipient and data.</p>
-                          </div>
-                          <button
-                            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[7px] border border-emerald-300/30 bg-emerald-400/10 px-2.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={emailModuleTestSending}
-                            onClick={() => { void sendSelectedEmailModuleTest(); }}
-                            type="button"
-                          >
-                            {emailModuleTestSending ? <Loader2 className="animate-spin" size={13} /> : <Mail size={13} />}
-                            Send
-                          </button>
-                        </div>
-                        {emailModuleTestResult && (
-                          <div className={`mt-2 rounded-[7px] border px-2 py-1.5 text-xs leading-5 ${emailModuleTestResult.ok ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" : "border-red-danger/25 bg-red-danger/10 text-red-100"}`}>
-                            <p className="font-semibold">{emailModuleTestResult.ok ? `Sent${emailModuleTestResult.id ? `: ${emailModuleTestResult.id}` : ""}` : emailModuleTestResult.error || "The email was not sent."}</p>
-                            {emailModuleTestResult.attemptedEmail && (
-                              <pre className="mt-2 max-h-44 overflow-auto rounded-[6px] border border-white/10 bg-black/20 p-2 text-[11px] leading-4 text-slate-100">{JSON.stringify(emailModuleTestResult.attemptedEmail, null, 2)}</pre>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Template data</p>
-                        {selectedEmailTemplate.variables.length > 0 ? (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {selectedEmailTemplate.variables.map((variable) => (
-                              <span key={variable} className="rounded-full bg-violet-brand/15 px-2 py-1 text-xs font-semibold text-fuchsia-200">
-                                {`{{${variable}}}`}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="mt-2 text-xs leading-5 text-slate-500">No saved variables on this template.</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedEmailTemplate && (
-                    <div className="rounded-[9px] border border-emerald-300/15 bg-emerald-400/10 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Email data mapping</p>
-                          <p className="mt-1 text-xs leading-5 text-emerald-100/70">Map webhook fields to the variables used by this email template.</p>
-                        </div>
-                        <button className="shrink-0 rounded-[7px] border border-emerald-200/20 px-2 py-1 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/15" onClick={addSelectedStepHandlebarData} type="button">
-                          Add field
-                        </button>
-                      </div>
-
-                      <div className="mt-3 space-y-2">
-                        {Array.from(new Set([...selectedEmailTemplate.variables, ...Object.keys(getConfigStringRecord(selectedStep.config, "handlebarData"))])).map((variable) => {
-                          const data = getConfigStringRecord(selectedStep.config, "handlebarData");
-                          const isDetectedVariable = selectedEmailTemplate.variables.includes(variable);
-                          const currentValue = data[variable] ?? "";
-                          const selectedTriggerPath = currentValue.match(/^\{\{\s*trigger\.([\w.]+)\s*\}\}$/)?.[1] || "";
-                          return (
-                            <div key={variable} className="relative rounded-[8px] border border-white/10 bg-[#07131c]/80 p-2">
-                              <div className="grid gap-2 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)_auto]">
-                                <input
-                                  aria-label="Handlebars variable"
-                                  className="h-8 min-w-0 rounded-[7px] border border-white/10 bg-white/[0.04] px-2 font-mono text-xs text-emerald-50 outline-none disabled:opacity-70"
-                                  disabled={isDetectedVariable}
-                                  {...(isDetectedVariable ? { value: variable } : { defaultValue: variable })}
-                                  onBlur={(event) => renameSelectedStepHandlebarData(variable, event.target.value)}
-                                  readOnly={isDetectedVariable}
-                                />
-                                <select
-                                  aria-label={`Webhook field for ${variable}`}
-                                  className="h-8 min-w-0 rounded-[7px] border border-white/10 bg-[#111827] px-2 text-xs text-white outline-none"
-                                  value={selectedTriggerPath || (currentValue ? "__custom" : "")}
-                                  onChange={(event) => {
-                                    if (event.target.value === "__custom") {
-                                      updateSelectedStepHandlebarData(variable, currentValue || makeDefaultHandlebarValue(variable));
-                                      return;
-                                    }
-                                    updateSelectedStepHandlebarData(variable, event.target.value ? `{{trigger.${event.target.value}}}` : "");
-                                  }}
-                                >
-                                  <option value="">Choose webhook field...</option>
-                                  {triggerPayloadPaths.map((path) => (
-                                    <option key={path} value={path}>{path}</option>
-                                  ))}
-                                  <option value="__custom">Manual value / expression</option>
-                                </select>
-                                <button
-                                  className="h-8 rounded-[7px] border border-emerald-200/20 px-2 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/15"
-                                  onClick={() => setActiveDataPickerVariable(activeDataPickerVariable === variable ? null : variable)}
-                                  type="button"
-                                >
-                                  More
-                                </button>
-                              </div>
-                              <div className="mt-2">
-                                <input
-                                  aria-label={`Value for ${variable}`}
-                                  className="h-8 w-full rounded-[7px] border border-white/10 bg-white/[0.04] px-2 text-xs text-white outline-none"
-                                  placeholder={triggerPayloadPaths.length > 0 ? "Or type a fixed value / {{trigger.path}}" : makeDefaultHandlebarValue(variable) || "Fixed value or {{trigger.path}}"}
-                                  value={currentValue}
-                                  onChange={(event) => updateSelectedStepHandlebarData(variable, event.target.value)}
-                                />
-                              </div>
-                              <div className="mt-1.5 flex items-center justify-between gap-2">
-                                <code className="truncate text-xs text-emerald-100/70">{`{{${variable}}} -> ${currentValue || "not mapped"}`}</code>
-                                {!isDetectedVariable && (
-                                  <button className="text-xs font-semibold text-red-200 transition hover:text-red-100" onClick={() => removeSelectedStepHandlebarData(variable)} type="button">
-                                    Remove
-                                  </button>
-                                )}
-                              </div>
-                              {activeDataPickerVariable === variable && (
-                                <div className="absolute right-2 top-12 z-30 w-[min(320px,calc(100vw-48px))] rounded-[10px] border border-white/10 bg-[#0D121C] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.5)]">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Insert value</p>
-                                      <p className="mt-1 text-xs leading-5 text-slate-500">Choose data from the trigger or an earlier module.</p>
-                                    </div>
-                                    <button className="text-xs font-semibold text-slate-400 transition hover:text-white" onClick={() => setActiveDataPickerVariable(null)} type="button">
-                                      Close
-                                    </button>
-                                  </div>
-
-                                  <div className="mt-3 max-h-72 space-y-3 overflow-auto pr-1">
-                                    <div>
-                                      <p className="mb-1.5 text-xs font-semibold text-slate-400">Trigger payload</p>
-                                      <div className="space-y-1">
-                                        {triggerPayloadPaths.length > 0 ? triggerPayloadPaths.map((path) => (
-                                          <button
-                                            key={path}
-                                            className="flex w-full items-center justify-between gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs text-slate-200 transition hover:bg-white/10"
-                                            onClick={() => insertSelectedStepDataToken(variable, `{{trigger.${path}}}`)}
-                                            type="button"
-                                          >
-                                            <span className="truncate">{path}</span>
-                                            <code className="shrink-0 text-[11px] text-emerald-200">{`{{trigger.${path}}}`}</code>
-                                          </button>
-                                        )) : (
-                                          <p className="rounded-[7px] border border-dashed border-white/10 p-2 text-xs leading-5 text-slate-500">No trigger fields found yet. Add fields to the trigger sample payload or send webhook data.</p>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {previousSteps.length > 0 && (
-                                      <div>
-                                        <p className="mb-1.5 text-xs font-semibold text-slate-400">Earlier modules</p>
-                                        <div className="space-y-2">
-                                          {previousSteps.map((step, index) => {
-                                            const moduleToken = `module_${index + 1}`;
-                                            return (
-                                              <div key={step.id} className="rounded-[8px] border border-white/10 bg-white/[0.03] p-2">
-                                                <p className="truncate text-xs font-semibold text-white">{step.name}</p>
-                                                <div className="mt-1 space-y-1">
-                                                  {makeModuleOutputFields(step).map((field) => (
-                                                    <button
-                                                      key={`${step.id}-${field}`}
-                                                      className="flex w-full items-center justify-between gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs text-slate-200 transition hover:bg-white/10"
-                                                      onClick={() => insertSelectedStepDataToken(variable, `{{${moduleToken}.${field}}}`)}
-                                                      type="button"
-                                                    >
-                                                      <span className="truncate">{field}</span>
-                                                      <code className="shrink-0 text-[11px] text-emerald-200">{`{{${moduleToken}.${field}}}`}</code>
-                                                    </button>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {selectedEmailTemplate.variables.length === 0 && Object.keys(getConfigStringRecord(selectedStep.config, "handlebarData")).length === 0 && (
-                          <div className="rounded-[8px] border border-dashed border-white/15 bg-white/[0.03] p-3 text-xs leading-5 text-slate-400">
-                            No variables detected yet. Add a field to create data such as first_name, company, or email.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between rounded-[8px] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300">
-                    Track opens
-                    <button className="text-violet-400" onClick={() => updateSelectedStepConfig("trackOpens", !getConfigRecord(selectedStep.config).trackOpens)} type="button">
-                      <ToggleRight size={28} />
-                    </button>
-                  </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {selectedStep.type === "wait" && (
-                <div className="grid grid-cols-[1fr_120px] gap-2">
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Duration</span>
-                    <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" min="1" type="number" value={getConfigString(selectedStep.config, "duration", "1")} onChange={(event) => updateSelectedStepConfig("duration", event.target.value)} />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Unit</span>
-                    <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "unit", "days")} onChange={(event) => updateSelectedStepConfig("unit", event.target.value)}>
-                      <option value="minutes">Minutes</option>
-                      <option value="hours">Hours</option>
-                      <option value="days">Days</option>
-                    </select>
-                  </label>
-                </div>
-              )}
-
-              {selectedStep.type === "webhook" && (
-                <>
-                  <div className="grid grid-cols-[110px_1fr] gap-2">
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-400">Method</span>
-                      <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "method", "POST")} onChange={(event) => updateSelectedStepConfig("method", event.target.value)}>
-                        <option value="GET">GET</option>
-                        <option value="POST">POST</option>
-                        <option value="PUT">PUT</option>
-                        <option value="PATCH">PATCH</option>
-                        <option value="DELETE">DELETE</option>
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-400">URL</span>
-                      <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="https://api.example.com/customer" value={getConfigString(selectedStep.config, "url")} onChange={(event) => updateSelectedStepConfig("url", event.target.value)} />
-                    </label>
-                  </div>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Authentication</span>
-                    <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "authType", "none")} onChange={(event) => updateSelectedStepConfig("authType", event.target.value)}>
-                      <option value="none">No auth</option>
-                      <option value="bearer">Bearer token</option>
-                      <option value="basic">Basic auth</option>
-                      <option value="api_key">API key</option>
-                    </select>
-                  </label>
-
-                  {getConfigString(selectedStep.config, "authType", "none") !== "none" && (
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-400">Auth value</span>
-                      <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Token, username:password, or key value" value={getConfigString(selectedStep.config, "authValue")} onChange={(event) => updateSelectedStepConfig("authValue", event.target.value)} />
-                    </label>
-                  )}
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Headers</span>
-                    <textarea className="mt-1.5 min-h-[92px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 font-mono text-xs leading-5 text-slate-100 outline-none" value={getConfigString(selectedStep.config, "headers", "{\n  \"Content-Type\": \"application/json\"\n}")} onChange={(event) => updateSelectedStepConfig("headers", event.target.value)} />
-                  </label>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Body</span>
-                    <textarea className="mt-1.5 min-h-[120px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 font-mono text-xs leading-5 text-slate-100 outline-none" value={getConfigString(selectedStep.config, "body", "{\n  \"email\": \"{{email}}\"\n}")} onChange={(event) => updateSelectedStepConfig("body", event.target.value)} />
-                  </label>
-                </>
-              )}
-
-              {selectedStep.type === "condition" && (
-                <>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-400">Field</span>
-                    <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="email_opened" value={getConfigString(selectedStep.config, "field")} onChange={(event) => updateSelectedStepConfig("field", event.target.value)} />
-                  </label>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-400">Rule</span>
-                      <select className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-[#111827] px-3 text-sm text-white outline-none" value={getConfigString(selectedStep.config, "operator", "equals")} onChange={(event) => updateSelectedStepConfig("operator", event.target.value)}>
-                        <option value="equals">Equals</option>
-                        <option value="contains">Contains</option>
-                        <option value="exists">Exists</option>
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-400">Value</span>
-                      <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="true" value={getConfigString(selectedStep.config, "value")} onChange={(event) => updateSelectedStepConfig("value", event.target.value)} />
-                    </label>
-                  </div>
-                </>
-              )}
-
-              {selectedStep.type === "tag_contact" && (
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-400">Tag</span>
-                  <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="engaged" value={getConfigString(selectedStep.config, "tag")} onChange={(event) => updateSelectedStepConfig("tag", event.target.value)} />
-                </label>
-              )}
-
-              {selectedStep.type === "ai_generate" && (
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-400">Prompt</span>
-                  <textarea className="mt-1.5 min-h-[96px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 text-sm leading-5 text-slate-100 outline-none" placeholder="Write a short follow-up based on the subscriber activity." value={getConfigString(selectedStep.config, "prompt")} onChange={(event) => updateSelectedStepConfig("prompt", event.target.value)} />
-                </label>
-              )}
-
-              {selectedStep.type === "end" && (
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-400">End note</span>
-                  <input className="mt-1.5 h-9 w-full rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none" placeholder="Flow completed" value={getConfigString(selectedStep.config, "note")} onChange={(event) => updateSelectedStepConfig("note", event.target.value)} />
-                </label>
-              )}
-
-            </div>
-          ) : (
-            <div className="rounded-[8px] border border-dashed border-white/15 bg-white/[0.03] p-4 text-sm leading-6 text-slate-400">
-              Select a module on the canvas to update it.
-            </div>
-          ))}
-
-          {activeInspectorTab === "data" && triggerAdded && (
-            <div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            <div className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Live data</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">{listensForExternalData ? "Press play, then send data to the webhook endpoint." : "Run the trigger to see the incoming payload."}</p>
-                </div>
-                <div className="flex shrink-0 gap-1.5">
-                  <button className="inline-flex h-8 items-center rounded-[7px] border border-white/10 bg-white/[0.04] px-2.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60" disabled={testingTrigger} onClick={() => { void loadLatestTestRun(); }} type="button">
-                    Refresh
-                  </button>
-                  <button
-                    className={`inline-flex h-8 items-center gap-1.5 rounded-[7px] border px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${listeningForTrigger ? "animate-pulse border-red-danger/40 bg-red-danger/20 text-red-100 hover:bg-red-danger/25" : "border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"}`}
-                    disabled={saving || (!listeningForTrigger && testingTrigger)}
-                    onClick={() => {
-                      if (listeningForTrigger) {
-                        stopListeningForTrigger();
-                        return;
-                      }
-                      void (listensForExternalData ? startListeningForTrigger() : runTriggerTest());
-                    }}
-                    type="button"
-                  >
-                    {testingTrigger && !listeningForTrigger ? <Loader2 className="animate-spin" size={13} /> : listeningForTrigger ? <Square size={12} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
-                    {listeningForTrigger ? "Stop" : "Play"}
-                  </button>
-                </div>
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Current run</span>
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${runStage === "complete" ? "bg-emerald-400/10 text-emerald-200" : runStage === "error" ? "bg-red-danger/15 text-red-100" : runStage === "idle" ? "bg-white/[0.06] text-slate-300" : "bg-fuchsia-400/10 text-fuchsia-100"}`}>
+                  {formatStatus(runStage)}
+                </span>
               </div>
-
-              {liveError && (
-                <div className="mt-3 rounded-[8px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-200">
-                  {liveError}
-                </div>
-              )}
-
-              {liveRun ? (
-                <div className="mt-3 space-y-3">
-                  <div className="rounded-[8px] border border-white/10 bg-white/[0.035] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold text-slate-400">Latest run</span>
-                      <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-xs font-semibold text-emerald-200">{formatStatus(liveRun.status)}</span>
-                    </div>
-                    <p className="mt-2 break-all text-xs text-slate-500">{liveRun.id}</p>
-                  </div>
-
-                  {liveEvents.length > 0 && (
-                    <div className="space-y-2">
-                      {liveEvents.map((event) => (
-                        <div key={event.id} className="rounded-[8px] border border-white/10 bg-white/[0.03] px-3 py-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-white">{event.title}</p>
-                              <p className="mt-1 text-xs text-slate-500">{formatStatus(event.event_type)}</p>
-                            </div>
-                            {event.event_type.includes("failed") && (
-                              <span className="shrink-0 rounded-full bg-red-danger/10 px-2 py-0.5 text-[11px] font-semibold text-red-200">Failed</span>
-                            )}
-                            {event.event_type.includes("skipped") && (
-                              <span className="shrink-0 rounded-full bg-amber-400/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">Skipped</span>
-                            )}
-                            {event.event_type.includes("sent") && (
-                              <span className="shrink-0 rounded-full bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200">Sent</span>
-                            )}
-                          </div>
-                          {getRunEventSummary(event) && (
-                            <p className="mt-2 rounded-[7px] border border-white/10 bg-[#070b12] px-2 py-1.5 text-xs leading-5 text-slate-300">{getRunEventSummary(event)}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Payload</p>
-                    <pre className="max-h-64 overflow-auto rounded-[8px] border border-white/10 bg-[#070b12] p-3 text-xs leading-5 text-slate-100">{livePayloadText}</pre>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 rounded-[8px] border border-dashed border-white/15 bg-white/[0.03] p-3 text-xs leading-5 text-slate-400">
-                  {listensForExternalData ? "No webhook data yet. Press play, then send a POST request to the endpoint above." : "No trigger data yet. Press play to create a test event."}
-                </div>
-              )}
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                {runStage === "idle"
+                  ? "Run the flow to start a conversation from the incoming payload and module outcomes."
+                  : runStage === "listening"
+                    ? "Waiting for webhook data. When a payload arrives, the conversation will show what each module received and produced."
+                    : runStage === "playing"
+                      ? "The flow is replaying the latest payload across the modules."
+                      : runStage === "complete"
+                        ? "The run completed. Review the module notes below before changing the next decision."
+                        : runStage === "saving"
+                          ? "Saving the flow before running it."
+                          : "The run hit an error. Review the latest module event below."}
+              </p>
             </div>
-          )}
 
-          {activeInspectorTab === "modules" && triggerAdded && (
-            <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Add module</p>
-              {renderAddModuleMenu(undefined, true)}
+            <div className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Prompt between modules</p>
+              <textarea
+                className="mt-3 min-h-[104px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 text-sm leading-5 text-slate-100 outline-none placeholder:text-slate-600"
+                placeholder="Example: If the webhook payload has a paid plan, send onboarding. If trial is expired, send recovery."
+                value={selectedPanel === "trigger" ? triggerDraft.notes : selectedStep ? getConfigString(selectedStep.config, "notes") : ""}
+                onChange={(event) => {
+                  if (selectedPanel === "trigger") {
+                    setTriggerDraft((draft) => ({ ...draft, notes: event.target.value }));
+                    return;
+                  }
+                  if (selectedStep) {
+                    updateSelectedStepConfig("notes", event.target.value);
+                  }
+                }}
+              />
+              <p className="mt-2 text-xs leading-5 text-slate-500">These notes stay with the selected module and help explain why the next module should run.</p>
             </div>
-          )}
-          </div>
-          {triggerAdded && (
-            <div className="border-t border-white/10 bg-[#0D121C] p-3">
-              {selectedPanel === "trigger" ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="inline-flex h-9 items-center justify-center gap-2 rounded-[7px] bg-violet-brand px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={saving} onClick={() => { void saveFlowSteps(); }} type="button">
-                    {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                    Save
-                  </button>
-                  <button className="inline-flex h-9 items-center justify-center gap-2 rounded-[7px] border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-200 transition hover:bg-white/10" onClick={() => { setTriggerAdded(false); setSelectedStepId(null); setSelectedPanel("trigger"); setActiveInspectorTab("settings"); }} type="button">
-                    <Trash2 size={14} />
-                    Reset
-                  </button>
-                </div>
-              ) : selectedStep ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="inline-flex h-9 items-center justify-center gap-2 rounded-[7px] bg-violet-brand px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={saving} onClick={() => { void saveFlowSteps(); }} type="button">
-                    {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                    Save
-                  </button>
-                  <button className="inline-flex h-9 items-center justify-center gap-2 rounded-[7px] border border-red-danger/30 bg-red-danger/10 px-3 text-xs font-semibold text-red-200 transition hover:bg-red-danger/20" onClick={() => removeStep(selectedStep.id)} type="button">
-                    <Trash2 size={14} />
-                    Delete
-                  </button>
-                </div>
-              ) : (
-                <button className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[7px] bg-violet-brand px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={saving} onClick={() => { void saveFlowSteps(); }} type="button">
-                  {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                  Save
+
+            <div className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Incoming data</p>
+                <button className="rounded-[7px] border border-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60" disabled={testingTrigger} onClick={() => { void loadLatestTestRun(); }} type="button">
+                  Refresh
                 </button>
+              </div>
+              {liveRun ? (
+                <pre className="mt-3 max-h-56 overflow-auto rounded-[8px] border border-white/10 bg-[#070b12] p-3 text-xs leading-5 text-slate-100">{JSON.stringify(liveRun.payload, null, 2)}</pre>
+              ) : (
+                <p className="mt-3 rounded-[8px] border border-dashed border-white/10 p-3 text-xs leading-5 text-slate-500">No webhook payload has been captured yet. Run a test or send data to the webhook endpoint.</p>
               )}
             </div>
-          )}
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Module conversation</p>
+              {liveEvents.length > 0 ? liveEvents.map((event) => (
+                <article key={event.id} className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">{event.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatStatus(event.event_type)}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-slate-500">{formatDate(event.created_at)}</span>
+                  </div>
+                  {getRunEventSummary(event) && (
+                    <p className="mt-3 rounded-[8px] border border-white/10 bg-[#070b12] px-2 py-1.5 text-xs leading-5 text-slate-300">{getRunEventSummary(event)}</p>
+                  )}
+                </article>
+              )) : (
+                <div className="rounded-[10px] border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-500">
+                  Module results will appear here after a run. The assistant view is meant to show what happened between modules, not module settings.
+                </div>
+              )}
+            </div>
+          </div>
         </aside>
       </section>
       <style jsx global>{`
