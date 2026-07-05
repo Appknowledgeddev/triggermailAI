@@ -1405,6 +1405,24 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     setActiveDataPickerVariable(null);
   }
 
+  function getDefaultVariableMapping(variable: string) {
+    const normalised = variable.toLowerCase();
+    const exactPath = triggerPayloadPaths.find((path) => path.toLowerCase() === normalised);
+    if (exactPath) {
+      return `{{trigger.${exactPath}}}`;
+    }
+
+    const loosePath = triggerPayloadPaths.find((path) => {
+      const lowerPath = path.toLowerCase();
+      return lowerPath.endsWith(`.${normalised}`) || lowerPath.includes(normalised) || normalised.includes(lowerPath);
+    });
+    if (loosePath) {
+      return `{{trigger.${loosePath}}}`;
+    }
+
+    return makeDefaultHandlebarValue(variable);
+  }
+
   function applyTemplateToSelectedStep(templateId: string) {
     if (!selectedStep) {
       return;
@@ -1458,7 +1476,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
           variables: template.variables,
           handlebarData: Object.fromEntries(template.variables.map((variable) => {
             const currentData = getConfigStringRecord(step.config, "handlebarData");
-            return [variable, currentData[variable] ?? makeDefaultHandlebarValue(variable)];
+            return [variable, currentData[variable] ?? getDefaultVariableMapping(variable)];
           })),
         },
       };
@@ -2873,8 +2891,8 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                     <div className="rounded-[9px] border border-emerald-300/15 bg-emerald-400/10 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Handlebars data</p>
-                          <p className="mt-1 text-xs leading-5 text-emerald-100/70">Values used for this email module when rendering template variables.</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Email data mapping</p>
+                          <p className="mt-1 text-xs leading-5 text-emerald-100/70">Map webhook fields to the variables used by this email template.</p>
                         </div>
                         <button className="shrink-0 rounded-[7px] border border-emerald-200/20 px-2 py-1 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/15" onClick={addSelectedStepHandlebarData} type="button">
                           Add field
@@ -2885,9 +2903,11 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                         {Array.from(new Set([...selectedEmailTemplate.variables, ...Object.keys(getConfigStringRecord(selectedStep.config, "handlebarData"))])).map((variable) => {
                           const data = getConfigStringRecord(selectedStep.config, "handlebarData");
                           const isDetectedVariable = selectedEmailTemplate.variables.includes(variable);
+                          const currentValue = data[variable] ?? "";
+                          const selectedTriggerPath = currentValue.match(/^\{\{\s*trigger\.([\w.]+)\s*\}\}$/)?.[1] || "";
                           return (
                             <div key={variable} className="relative rounded-[8px] border border-white/10 bg-[#07131c]/80 p-2">
-                              <div className="grid grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)_auto] gap-2">
+                              <div className="grid gap-2 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)_auto]">
                                 <input
                                   aria-label="Handlebars variable"
                                   className="h-8 min-w-0 rounded-[7px] border border-white/10 bg-white/[0.04] px-2 font-mono text-xs text-emerald-50 outline-none disabled:opacity-70"
@@ -2896,23 +2916,43 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                                   onBlur={(event) => renameSelectedStepHandlebarData(variable, event.target.value)}
                                   readOnly={isDetectedVariable}
                                 />
-                                <input
-                                  aria-label={`Value for ${variable}`}
-                                  className="h-8 min-w-0 rounded-[7px] border border-white/10 bg-white/[0.04] px-2 text-xs text-white outline-none"
-                                  placeholder={makeDefaultHandlebarValue(variable) || "Value"}
-                                  value={data[variable] ?? ""}
-                                  onChange={(event) => updateSelectedStepHandlebarData(variable, event.target.value)}
-                                />
+                                <select
+                                  aria-label={`Webhook field for ${variable}`}
+                                  className="h-8 min-w-0 rounded-[7px] border border-white/10 bg-[#111827] px-2 text-xs text-white outline-none"
+                                  value={selectedTriggerPath || (currentValue ? "__custom" : "")}
+                                  onChange={(event) => {
+                                    if (event.target.value === "__custom") {
+                                      updateSelectedStepHandlebarData(variable, currentValue || makeDefaultHandlebarValue(variable));
+                                      return;
+                                    }
+                                    updateSelectedStepHandlebarData(variable, event.target.value ? `{{trigger.${event.target.value}}}` : "");
+                                  }}
+                                >
+                                  <option value="">Choose webhook field...</option>
+                                  {triggerPayloadPaths.map((path) => (
+                                    <option key={path} value={path}>{path}</option>
+                                  ))}
+                                  <option value="__custom">Manual value / expression</option>
+                                </select>
                                 <button
                                   className="h-8 rounded-[7px] border border-emerald-200/20 px-2 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/15"
                                   onClick={() => setActiveDataPickerVariable(activeDataPickerVariable === variable ? null : variable)}
                                   type="button"
                                 >
-                                  Pick
+                                  More
                                 </button>
                               </div>
+                              <div className="mt-2">
+                                <input
+                                  aria-label={`Value for ${variable}`}
+                                  className="h-8 w-full rounded-[7px] border border-white/10 bg-white/[0.04] px-2 text-xs text-white outline-none"
+                                  placeholder={triggerPayloadPaths.length > 0 ? "Or type a fixed value / {{trigger.path}}" : makeDefaultHandlebarValue(variable) || "Fixed value or {{trigger.path}}"}
+                                  value={currentValue}
+                                  onChange={(event) => updateSelectedStepHandlebarData(variable, event.target.value)}
+                                />
+                              </div>
                               <div className="mt-1.5 flex items-center justify-between gap-2">
-                                <code className="truncate text-xs text-emerald-100/70">{`{{${variable}}}`}</code>
+                                <code className="truncate text-xs text-emerald-100/70">{`{{${variable}}} -> ${currentValue || "not mapped"}`}</code>
                                 {!isDetectedVariable && (
                                   <button className="text-xs font-semibold text-red-200 transition hover:text-red-100" onClick={() => removeSelectedStepHandlebarData(variable)} type="button">
                                     Remove
