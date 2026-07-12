@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { ArrowLeft, Bot, Clock, GitBranch, Inbox, Loader2, Mail, MousePointerClick, Move, Paperclip, Pencil, Play, Plus, Save, Search, Settings, Square, StickyNote, Tag, ToggleRight, Trash2, Users, Webhook, X, Zap, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, CircleSlash, Clock, Eye, GitBranch, HardDrive, Inbox, Loader2, Mail, Maximize2, Minimize2, MousePointerClick, Move, Paperclip, Pencil, Play, Plus, RefreshCw, Save, Search, Settings, Square, StickyNote, Tag, ToggleRight, Trash2, Users, Webhook, X, Zap, ZoomIn, ZoomOut } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -51,6 +51,11 @@ type RunBubble = {
   subtitle: string;
   payload: Json;
   position: CanvasPosition;
+  count: number;
+};
+
+type FlowRunWithEvents = FlowRun & {
+  events: RunEvent[];
 };
 
 type ModuleContextMenu = {
@@ -227,6 +232,88 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return "Not yet";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatHistoryDate(value: string | null) {
+  if (!value) {
+    return "Not yet";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatDuration(startedAt: string | null, completedAt: string | null) {
+  if (!startedAt || !completedAt) {
+    return "-";
+  }
+
+  const seconds = Math.max(0, Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000));
+  if (seconds === 0) {
+    return "Less than 1 sec";
+  }
+  if (seconds < 60) {
+    return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+}
+
+function formatDataSize(value: Json) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value || {})).length;
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function getJsonEntries(value: Json): [string, Json][] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => [String(index), item as Json]);
+  }
+
+  return Object.entries(value as Record<string, Json>);
+}
+
+function formatJsonLeaf(value: Json) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value === null) {
+    return "null";
+  }
+  return "";
+}
+
 function getCanvasPosition(value: Json | undefined): CanvasPosition | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -376,16 +463,24 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedEmailAccount[]>([]);
   const [liveRun, setLiveRun] = useState<FlowRun | null>(null);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
+  const [runHistory, setRunHistory] = useState<FlowRunWithEvents[]>([]);
+  const [runHistoryLoading, setRunHistoryLoading] = useState(false);
+  const [runHistoryView, setRunHistoryView] = useState<"list" | "details">("list");
+  const [runLogExpanded, setRunLogExpanded] = useState(false);
   const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const [visibleRunBubbleKeys, setVisibleRunBubbleKeys] = useState<string[]>([]);
   const [openRunBubbleKey, setOpenRunBubbleKey] = useState<string | null>(null);
+  const [expandedCanvasPopup, setExpandedCanvasPopup] = useState<"settings" | "data" | null>(null);
+  const [dataInspectorSearch, setDataInspectorSearch] = useState("");
+  const [collapsedDataPaths, setCollapsedDataPaths] = useState<string[]>([]);
   const [webhookTestSending, setWebhookTestSending] = useState(false);
   const [emailModuleTestSending, setEmailModuleTestSending] = useState(false);
   const [emailModuleTestResult, setEmailModuleTestResult] = useState<EmailModuleTestResult | null>(null);
   const [activeDataPickerVariable, setActiveDataPickerVariable] = useState<string | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedPanel, setSelectedPanel] = useState<"trigger" | "step">("trigger");
+  const [moduleSettingsOpen, setModuleSettingsOpen] = useState(false);
   const [activeInspectorTab, setActiveInspectorTab] = useState<"settings" | "data" | "modules">("settings");
   const [moduleMenuIndex, setModuleMenuIndex] = useState<number | null>(null);
   const [moduleMenuState, setModuleMenuState] = useState<ModuleMenuState>({ provider: null });
@@ -545,6 +640,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       setSteps(nextSteps);
       setSelectedStepId(null);
       setSelectedPanel("trigger");
+      setModuleSettingsOpen(false);
     } catch (loadError) {
       setError(getErrorMessage(loadError, "Flow could not be loaded."));
     } finally {
@@ -616,14 +712,19 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
   }
 
   function getRunEventForModule(moduleKey: string) {
+    return getRunEventsForModule(moduleKey)[0] || null;
+  }
+
+  function getRunEventsForModule(moduleKey: string) {
     if (moduleKey === "trigger") {
-      return liveEvents.find((event) => event.event_type.includes("trigger") || event.event_type.includes("webhook")) || liveEvents[0] || null;
+      const triggerEvents = liveEvents.filter((event) => event.event_type.includes("trigger") || event.event_type.includes("webhook"));
+      return triggerEvents.length > 0 ? triggerEvents : liveEvents.slice(0, 1);
     }
 
-    return liveEvents.find((event) => {
+    return liveEvents.filter((event) => {
       const metadata = getConfigRecord(event.metadata);
       return metadata.stepId === moduleKey;
-    }) || null;
+    });
   }
 
   function getRunEventSummary(event: RunEvent) {
@@ -658,18 +759,80 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     return "";
   }
 
+  function getRunEventStatus(event: RunEvent) {
+    const metadata = getConfigRecord(event.metadata);
+    const result = getConfigRecord(metadata.result);
+    if (event.event_type.includes("failed") || result.ok === false && !result.skipped) {
+      return "failed";
+    }
+    if (event.event_type.includes("skipped") || result.skipped === true) {
+      return "skipped";
+    }
+    return "completed";
+  }
+
+  function getRunEventAccent(event: RunEvent) {
+    const status = getRunEventStatus(event);
+    if (status === "failed") {
+      return "bg-red-danger text-white";
+    }
+    if (status === "skipped") {
+      return "bg-fuchsia-700 text-white";
+    }
+    if (event.event_type.includes("webhook") || event.event_type.includes("trigger")) {
+      return "bg-rose-600 text-white";
+    }
+    if (event.event_type.includes("http")) {
+      return "bg-sky-600 text-white";
+    }
+    return "bg-fuchsia-700 text-white";
+  }
+
+  function getRunEventModuleName(event: RunEvent) {
+    const metadata = getConfigRecord(event.metadata);
+    if (!metadata.stepId) {
+      return triggerDraft.eventName || "Webhook";
+    }
+
+    return steps.find((step) => step.id === metadata.stepId)?.name || event.title;
+  }
+
+  function getRunEventOperation(event: RunEvent, index: number) {
+    const metadata = getConfigRecord(event.metadata);
+    return typeof metadata.position === "number" ? metadata.position : index + 1;
+  }
+
+  function getRunEventLogMessage(event: RunEvent) {
+    const status = getRunEventStatus(event);
+    const summary = getRunEventSummary(event);
+    if (summary) {
+      return summary;
+    }
+    if (status === "failed") {
+      return "The operation failed.";
+    }
+    if (status === "skipped") {
+      const metadata = getConfigRecord(event.metadata);
+      const result = getConfigRecord(metadata.result);
+      return typeof result.reason === "string" ? result.reason : "The bundle did not pass through the filter.";
+    }
+    return "The operation was completed.";
+  }
+
   function getRunBubble(moduleKey: string): RunBubble | null {
     if (!liveRun) {
       return null;
     }
 
     if (moduleKey === "trigger") {
+      const triggerEvents = getRunEventsForModule("trigger");
       return {
         key: "trigger",
         title: "Data received",
         subtitle: liveEvents[0]?.event_type === "trigger_test_received" ? "Sample test data" : "Live trigger data",
         payload: liveRun.payload,
         position: triggerPosition,
+        count: Math.max(1, triggerEvents.length),
       };
     }
 
@@ -684,11 +847,12 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       return null;
     }
 
+    const moduleEvents = getRunEventsForModule(moduleKey);
     const eventMetadata = event ? getConfigRecord(event.metadata) : {};
     const result = getConfigRecord(eventMetadata.result);
     const attemptedEmail = getConfigRecord(result.attemptedEmail);
     const stepType = getStepType(step.type);
-    const bubblePayload = step.type === "email" && Object.keys(attemptedEmail).length > 0
+    const singleEventPayload = step.type === "email" && Object.keys(attemptedEmail).length > 0
       ? {
           status: event.event_type,
           reason: typeof result.reason === "string" ? result.reason : undefined,
@@ -696,6 +860,14 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
           attemptedEmail,
         }
       : event.metadata;
+    const bubblePayload = moduleEvents.length > 1
+      ? moduleEvents.map((moduleEvent) => ({
+          title: moduleEvent.title,
+          eventType: moduleEvent.event_type,
+          createdAt: moduleEvent.created_at,
+          metadata: moduleEvent.metadata,
+        }))
+      : singleEventPayload;
 
     return {
       key: moduleKey,
@@ -707,12 +879,182 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
         status: "No run data was recorded for this module.",
       },
       position: getStepCanvasPosition(step, stepIndex),
+      count: Math.max(1, moduleEvents.length),
     };
   }
 
   const runBubbles = visibleRunBubbleKeys
     .map((moduleKey) => getRunBubble(moduleKey))
     .filter((bubble): bubble is RunBubble => Boolean(bubble));
+  const orderedLiveEvents = [...liveEvents].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const visibleRunEvents = runLogExpanded ? orderedLiveEvents : orderedLiveEvents.slice(0, 8);
+  const selectedRunHistoryIndex = liveRun ? runHistory.findIndex((run) => run.id === liveRun.id) : -1;
+  const selectedRunLabel = selectedRunHistoryIndex > -1 ? `Run ${runHistory.length - selectedRunHistoryIndex}` : "Run";
+
+  function jsonTreeMatches(key: string, value: Json, search: string): boolean {
+    if (!search) {
+      return true;
+    }
+
+    const needle = search.toLowerCase();
+    if (key.toLowerCase().includes(needle) || formatJsonLeaf(value).toLowerCase().includes(needle)) {
+      return true;
+    }
+
+    return getJsonEntries(value).some(([childKey, childValue]) => jsonTreeMatches(childKey, childValue, search));
+  }
+
+  function toggleDataPath(path: string) {
+    setCollapsedDataPaths((paths) => paths.includes(path) ? paths.filter((item) => item !== path) : [...paths, path]);
+  }
+
+  function openModuleSettingsPanel() {
+    setOpenRunBubbleKey(null);
+    setExpandedCanvasPopup(null);
+    setModuleSettingsOpen(true);
+  }
+
+  function openRunDataPanel(moduleKey: string) {
+    setModuleSettingsOpen(false);
+    setExpandedCanvasPopup(null);
+    setOpenRunBubbleKey(moduleKey);
+    setDataInspectorSearch("");
+    setCollapsedDataPaths([]);
+    setPayloadBounceKey((key) => key + 1);
+  }
+
+  function closeRunDataPanel() {
+    setOpenRunBubbleKey(null);
+    setExpandedCanvasPopup(null);
+  }
+
+  function closeModuleSettingsPanel() {
+    setModuleSettingsOpen(false);
+    setExpandedCanvasPopup(null);
+  }
+
+  function renderJsonTree(value: Json, depth = 0, parentPath = "root", search = dataInspectorSearch.trim().toLowerCase()): React.ReactNode {
+    const entries = getJsonEntries(value);
+    if (entries.length === 0) {
+      return <span className="text-slate-500">{formatJsonLeaf(value)}</span>;
+    }
+
+    const visibleEntries = entries.filter(([key, entryValue]) => jsonTreeMatches(key, entryValue, search));
+    if (visibleEntries.length === 0) {
+      return <p className="text-[11px] text-slate-400">No matching fields.</p>;
+    }
+
+    return (
+      <div className={depth === 0 ? "space-y-1.5" : "ml-3 border-l border-cyan-400/15 pl-2"}>
+        {visibleEntries.map(([key, entryValue]) => {
+          const childEntries = getJsonEntries(entryValue);
+          const isCollection = childEntries.length > 0;
+          const path = `${parentPath}.${key}`;
+          const isCollapsed = collapsedDataPaths.includes(path) && !search;
+          return (
+            <div key={path} className="text-[11px] leading-4">
+              <div className="flex min-w-0 items-start gap-1">
+                {isCollection ? (
+                  <button
+                    aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${key}`}
+                    className="mt-[3px] grid size-3.5 shrink-0 place-items-center rounded-[4px] border border-cyan-300/35 bg-cyan-300/10 text-[9px] leading-none text-cyan-200"
+                    onClick={() => toggleDataPath(path)}
+                    type="button"
+                  >
+                    {isCollapsed ? "+" : "-"}
+                  </button>
+                ) : (
+                  <span className="mt-[7px] h-px w-3 shrink-0 bg-cyan-300/25" />
+                )}
+                <p className="min-w-0 break-words">
+                  <span className="text-cyan-200">{key}</span>
+                  {isCollection ? (
+                    <span className="text-slate-500">: {Array.isArray(entryValue) ? "array" : "group"}</span>
+                  ) : (
+                    <>
+                      <span className="text-slate-500">: </span>
+                      <span className="text-slate-300">{formatJsonLeaf(entryValue)}</span>
+                    </>
+                  )}
+                </p>
+              </div>
+              {isCollection && !isCollapsed && renderJsonTree(entryValue, depth + 1, path, search)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderDataInspector(bubble: RunBubble) {
+    const operationLabel = bubble.key === "trigger" ? "Operation 1" : bubble.title;
+    const inputPayload = bubble.key === "trigger" && liveEvents[0]
+      ? getConfigRecord(liveEvents[0].metadata)
+      : { bundle: bubble.payload } as Record<string, Json>;
+    const outputPayload = bubble.key === "trigger" ? liveRun?.payload || bubble.payload : bubble.payload;
+
+    return (
+      <div className="max-h-[520px] overflow-auto rounded-[10px] border border-cyan-300/15 bg-[#07111D] p-3 text-slate-100 shadow-inner">
+        <div className="rounded-[8px] border border-cyan-300/15 bg-cyan-300/[0.06] p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Packet overview</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-200">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-1 text-emerald-200"><CheckCircle2 size={13} /> {bubble.count} {bubble.count === 1 ? "step" : "steps"}</span>
+            <span className="rounded-full bg-white/[0.06] px-2 py-1">{bubble.count} credit</span>
+            <span className="rounded-full bg-white/[0.06] px-2 py-1">{formatDataSize(outputPayload)}</span>
+          </div>
+        </div>
+
+        <div className="mt-3 flex h-9 items-center gap-2 rounded-[8px] border border-white/10 bg-white/[0.04] px-2 text-xs text-slate-400">
+          <Search size={13} />
+          <input
+            className="min-w-0 flex-1 bg-transparent text-xs text-slate-100 outline-none placeholder:text-slate-500"
+            onChange={(event) => setDataInspectorSearch(event.target.value)}
+            placeholder="Find a field or value"
+            value={dataInspectorSearch}
+          />
+          {dataInspectorSearch && (
+            <button className="text-slate-500 transition hover:text-white" onClick={() => setDataInspectorSearch("")} type="button">
+              <X size={12} />
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 space-y-3">
+          <div className="flex items-center gap-2 text-sm text-slate-300">
+            <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.65)]" />
+            Packet opened
+          </div>
+
+          <section className="rounded-[9px] border border-white/10 bg-white/[0.035] p-3">
+            <div className="flex items-center justify-between gap-2 text-sm text-slate-100">
+              <span className="inline-flex items-center gap-2"><span className="grid size-5 place-items-center rounded-full bg-cyan-300/15 text-[11px] font-bold text-cyan-200">1</span>{operationLabel}</span>
+              <span className="text-xs text-slate-500">{bubble.count} events</span>
+            </div>
+
+            <div className="mt-3 space-y-3">
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Received</p>
+                {renderJsonTree(inputPayload as Json)}
+              </div>
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Resolved</p>
+                {renderJsonTree(outputPayload)}
+              </div>
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Usage</p>
+                {renderJsonTree({ cost: `${bubble.count} credit`, size: formatDataSize(outputPayload) })}
+              </div>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+            <div className="rounded-[8px] border border-white/10 bg-white/[0.03] px-2 py-2">Stored in run log</div>
+            <div className="rounded-[8px] border border-white/10 bg-white/[0.03] px-2 py-2">Ready for mapping</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function triggerModuleFlash(moduleKey: string) {
     const nonce = Date.now();
@@ -992,6 +1334,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
         setSelectedPanel("step");
       }
       setActiveInspectorTab("settings");
+      openModuleSettingsPanel();
       setModuleMenuIndex(null);
     }
 
@@ -1039,6 +1382,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       setSelectedPanel("trigger");
       setSelectedStepId(null);
       setActiveInspectorTab("settings");
+      openModuleSettingsPanel();
       return;
     }
 
@@ -1046,6 +1390,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       setSelectedStepId(target.id);
       setSelectedPanel("step");
       setActiveInspectorTab("settings");
+      openModuleSettingsPanel();
     }
   }
 
@@ -1059,6 +1404,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       setSelectedPanel("step");
     }
     setActiveInspectorTab("settings");
+    openModuleSettingsPanel();
 
     window.requestAnimationFrame(() => {
       moduleTitleInputRef.current?.focus();
@@ -1156,6 +1502,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     setSelectedStepId(null);
     setSelectedPanel("trigger");
     setActiveInspectorTab("settings");
+    openModuleSettingsPanel();
     setModuleMenuIndex(null);
     setModuleContextMenu(null);
   }
@@ -1207,6 +1554,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     setSelectedStepId(nextStep.id);
     setSelectedPanel("step");
     setActiveInspectorTab("settings");
+    openModuleSettingsPanel();
     setModuleMenuIndex(null);
     setModuleMenuState({ provider: null });
     setModuleContextMenu(null);
@@ -1522,6 +1870,74 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     return data.session?.user.email || null;
   }
 
+  async function loadRunHistory(selectLatest = false) {
+    if (!supabaseReady) {
+      return;
+    }
+
+    setRunHistoryLoading(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: runs, error: runsError } = await supabase
+        .from("flow_runs")
+        .select("*")
+        .eq("flow_id", flowId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (runsError) {
+        throw runsError;
+      }
+
+      const runIds = (runs || []).map((run) => run.id);
+      const { data: events, error: eventsError } = runIds.length > 0
+        ? await supabase
+          .from("run_events")
+          .select("*")
+          .in("flow_run_id", runIds)
+          .order("created_at", { ascending: false })
+        : { data: [], error: null };
+
+      if (eventsError) {
+        throw eventsError;
+      }
+
+      const nextHistory = (runs || []).map((run) => ({
+        ...run,
+        events: (events || []).filter((event) => event.flow_run_id === run.id),
+      }));
+
+      setRunHistory(nextHistory);
+      if (selectLatest && nextHistory[0]) {
+        selectRunFromHistory(nextHistory[0], false);
+      }
+    } catch (historyError) {
+      setLiveError(getErrorMessage(historyError, "Run history could not be loaded."));
+    } finally {
+      setRunHistoryLoading(false);
+    }
+  }
+
+  function selectRunFromHistory(run: FlowRunWithEvents, openDetails = true) {
+    setLiveRun(run);
+    setLiveEvents(run.events);
+    setRunHistoryView(openDetails ? "details" : runHistoryView);
+    setRunLogExpanded(false);
+    setOpenRunBubbleKey(null);
+    setPayloadBounceKey((key) => key + 1);
+    setVisibleRunBubbleKeys([
+      "trigger",
+      ...steps
+        .filter((step) => run.events.some((event) => getConfigRecord(event.metadata).stepId === step.id))
+        .map((step) => step.id),
+    ]);
+  }
+
+  useEffect(() => {
+    void loadRunHistory(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowId, supabaseReady, steps.length]);
+
   function buildStepData(config: Json, context: Record<string, unknown>) {
     const handlebarData = getConfigStringRecord(config, "handlebarData");
     return Object.fromEntries(Object.entries(handlebarData).map(([key, value]) => [key, renderHandlebars(value, context)]));
@@ -1603,9 +2019,16 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
 
       setLiveRun(payload.run || null);
       setLiveEvents(payload.events || []);
+      if (payload.run) {
+        if (options.showPayloadCard !== false) {
+          setRunHistoryView("details");
+        }
+        void loadRunHistory();
+      }
       if (options.showPayloadCard !== false) {
         if (payload.run) {
           setVisibleRunBubbleKeys(["trigger"]);
+          setModuleSettingsOpen(false);
           setOpenRunBubbleKey("trigger");
           setPayloadBounceKey((key) => key + 1);
           triggerModuleFlash("trigger");
@@ -1617,6 +2040,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       setLiveError(getErrorMessage(runError, "Latest test run could not be loaded."));
       return null;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowId, supabaseReady]);
 
   const playRunAnimation = useCallback(async () => {
@@ -1805,7 +2229,9 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
 
       setLiveRun(payload.run);
       setLiveEvents(payload.events || []);
+      setRunHistoryView("details");
       setPayloadBounceKey((key) => key + 1);
+      void loadRunHistory();
       await playRunAnimation();
     } catch (runError) {
       setRunStage("error");
@@ -1847,6 +2273,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
     setSelectedStepId(nextSteps[0]?.id || null);
     setSelectedPanel(nextSteps.length > 0 ? "step" : "trigger");
     setActiveInspectorTab("settings");
+    setModuleSettingsOpen(false);
     setModuleContextMenu(null);
   }
 
@@ -2024,7 +2451,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
       primaryActionHidden
       secondaryActionHidden
     >
-      <section className="mt-4 grid h-[calc(100vh-150px)] min-h-[620px] overflow-hidden rounded-[10px] border border-white/10 bg-[#070b12] xl:grid-cols-[1fr_340px]">
+      <section className="-mx-3 -mb-4 -mt-[14px] grid h-[calc(100vh-58px)] min-h-[620px] overflow-hidden bg-[#070b12] sm:-mx-4 lg:-ml-4 lg:-mr-4 xl:grid-cols-[1fr_340px]">
         <div className="relative min-h-0 bg-[radial-gradient(circle,rgba(148,163,184,0.13)_1px,transparent_1px)] [background-size:22px_22px]">
           <div className="absolute left-4 top-4 z-40 flex gap-2" data-canvas-control="true">
             <Link href="/flows" className="grid size-9 place-items-center rounded-[8px] border border-white/10 bg-white/[0.04] text-slate-300">
@@ -2051,15 +2478,15 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
             </button>
             <button
               aria-pressed={flow?.status === "running"}
-              className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${flow?.status === "running" ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10"}`}
+              className={`inline-flex h-9 items-center gap-2.5 rounded-[8px] border px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${flow?.status === "running" ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10"}`}
               disabled={publishing || saving || !triggerAdded}
               onClick={() => { void togglePublished(); }}
               type="button"
             >
-              <span className={`relative h-5 w-9 rounded-full transition ${flow?.status === "running" ? "bg-emerald-400" : "bg-slate-700"}`}>
-                <span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${flow?.status === "running" ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+              <span className={`relative h-5 w-10 shrink-0 rounded-full transition ${flow?.status === "running" ? "bg-emerald-400" : "bg-slate-700"}`}>
+                <span className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow transition-transform ${flow?.status === "running" ? "translate-x-5" : "translate-x-0"}`} />
               </span>
-              <span>{publishing ? "Updating" : flow?.status === "running" ? "Published" : "Publish"}</span>
+              <span className="min-w-[58px] text-left">{publishing ? "Updating" : flow?.status === "running" ? "Published" : "Publish"}</span>
             </button>
           </div>
 
@@ -2087,10 +2514,6 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
               onTouchMove={handleCanvasTouchMove}
               onTouchStart={handleCanvasTouchStart}
             >
-              <div className="pointer-events-none fixed bottom-5 left-[96px] z-20 hidden items-center gap-2 rounded-[9px] border border-white/10 bg-[#0D121C]/95 px-3 py-2 text-xs font-semibold text-slate-400 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur lg:flex">
-                <Move size={14} />
-                Drag or pinch the canvas
-              </div>
               <div className="absolute right-4 top-4 z-20 flex items-center gap-2 rounded-[9px] border border-white/10 bg-[#0D121C]/95 p-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur" data-canvas-control="true">
                 <button className="grid size-8 place-items-center rounded-[7px] text-slate-300 transition hover:bg-white/10 hover:text-white" onClick={() => updateZoom(zoom - 0.08)} type="button">
                   <ZoomOut size={15} />
@@ -2204,7 +2627,7 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                       return isOpen ? (
                         <div
                           key={`${bubble.key}-card-${payloadBounceKey}`}
-                          className="absolute z-40 w-[360px] animate-[payloadBounceIn_420ms_cubic-bezier(0.18,0.89,0.32,1.28)] rounded-[10px] border border-emerald-300/25 bg-[#0D121C]/98 p-3 shadow-[0_22px_60px_rgba(0,0,0,0.48)] backdrop-blur"
+                          className={`absolute z-[70] animate-[payloadBounceIn_420ms_cubic-bezier(0.18,0.89,0.32,1.28)] rounded-[10px] border border-emerald-300/25 bg-[#0D121C]/98 p-3 shadow-[0_22px_60px_rgba(0,0,0,0.48)] backdrop-blur ${expandedCanvasPopup === "data" ? "w-[680px]" : "w-[500px]"}`}
                           data-canvas-control="true"
                           style={{ left: bubble.position.x + 105, top: bubble.position.y - 150 }}
                         >
@@ -2212,13 +2635,28 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                           <div className="relative mb-2 flex items-center justify-between gap-3">
                             <div>
                               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">{bubble.title}</p>
-                              <p className="mt-1 text-xs text-slate-500">{bubble.subtitle}</p>
+                              <p className="mt-1 text-xs text-slate-500">{bubble.subtitle} · {bubble.count} {bubble.count === 1 ? "record" : "records"}</p>
                             </div>
-                            <button className="rounded-[7px] border border-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10" onClick={() => setOpenRunBubbleKey(null)} type="button">
-                              Hide
-                            </button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                aria-label={expandedCanvasPopup === "data" ? "Shrink data popup" : "Expand data popup"}
+                                className="grid size-7 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+                                onClick={() => setExpandedCanvasPopup(expandedCanvasPopup === "data" ? null : "data")}
+                                type="button"
+                              >
+                                {expandedCanvasPopup === "data" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                              </button>
+                              <button
+                                aria-label="Close data popup"
+                                className="grid size-7 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+                                onClick={closeRunDataPanel}
+                                type="button"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
                           </div>
-                          <pre className="relative max-h-52 overflow-auto rounded-[8px] border border-white/10 bg-[#070b12] p-3 text-xs leading-5 text-slate-100">{JSON.stringify(bubble.payload, null, 2)}</pre>
+                          {renderDataInspector(bubble)}
                         </div>
                       ) : (
                         <button
@@ -2226,13 +2664,12 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                           className="absolute z-40 flex -translate-x-1/2 -translate-y-1/2 animate-[payloadBubbleIn_320ms_cubic-bezier(0.18,0.89,0.32,1.28)] items-center gap-2 rounded-full border border-emerald-200/40 bg-emerald-400 px-3 py-2 text-xs font-black text-emerald-950 shadow-[0_0_28px_rgba(52,211,153,0.55)] transition hover:scale-105"
                           data-canvas-control="true"
                           onClick={() => {
-                            setOpenRunBubbleKey(bubble.key);
-                            setPayloadBounceKey((key) => key + 1);
+                            openRunDataPanel(bubble.key);
                           }}
                           style={{ left: bubble.position.x + 116, top: bubble.position.y - 88 }}
                           type="button"
                         >
-                          <span className="size-2 rounded-full bg-emerald-950" />
+                          <span className="grid min-w-6 place-items-center rounded-full bg-emerald-950 px-1.5 py-0.5 text-[11px] text-emerald-100">{bubble.count}</span>
                           {bubble.key === "trigger" ? "Data received" : "Module data"}
                         </button>
                       );
@@ -2341,13 +2778,15 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                       </div>
                     )}
 
-                    {selectedModulePosition && (
+                    {moduleSettingsOpen && selectedModulePosition && (
                       <div
-                        className="absolute z-30 w-[340px] rounded-[12px] border border-white/10 bg-[#0D121C]/96 p-3 text-sm shadow-[0_24px_70px_rgba(0,0,0,0.48)] backdrop-blur"
+                        className={`absolute z-[60] rounded-[12px] border border-white/10 bg-[#0D121C]/96 p-3 text-sm shadow-[0_24px_70px_rgba(0,0,0,0.48)] backdrop-blur ${expandedCanvasPopup === "settings" ? "w-[620px]" : "w-[460px]"}`}
                         data-canvas-control="true"
                         style={{
-                          left: selectedModulePosition.x + 92,
-                          top: Math.max(20, selectedModulePosition.y - 118),
+                          left: selectedModulePosition.x + (92 / zoom),
+                          top: Math.max(20 / zoom, selectedModulePosition.y - (118 / zoom)),
+                          transform: `scale(${1 / zoom})`,
+                          transformOrigin: "top left",
                         }}
                       >
                         <div className="mb-3 flex items-start justify-between gap-3">
@@ -2357,9 +2796,24 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
                               {selectedPanel === "trigger" ? (triggerDraft.eventName || "Trigger") : selectedStep?.name || "Module"}
                             </h3>
                           </div>
-                          <button className="grid size-7 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white" onClick={() => setActiveInspectorTab("modules")} type="button">
-                            <Plus size={14} />
-                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              aria-label={expandedCanvasPopup === "settings" ? "Shrink module settings" : "Expand module settings"}
+                              className="grid size-7 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+                              onClick={() => setExpandedCanvasPopup(expandedCanvasPopup === "settings" ? null : "settings")}
+                              type="button"
+                            >
+                              {expandedCanvasPopup === "settings" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                            </button>
+                            <button
+                              aria-label="Close module settings"
+                              className="grid size-7 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+                              onClick={closeModuleSettingsPanel}
+                              type="button"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         </div>
 
                         {selectedPanel === "trigger" ? (
@@ -2463,88 +2917,164 @@ export function FlowBuilder({ flowId }: FlowBuilderProps) {
 
         <aside className="flex min-h-0 flex-col border-t border-white/10 bg-[#0D121C] xl:border-l xl:border-t-0">
           <div className="border-b border-white/10 p-4 pb-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-fuchsia-300">Flow AI</p>
-            <h2 className="mt-1 text-base font-semibold text-white">Run conversation</h2>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-fuchsia-300">Flow AI</p>
+                <h2 className="mt-1 text-base font-semibold text-white">{runHistoryView === "details" ? "Run details" : "Run conversation"}</h2>
+              </div>
+              {runHistoryView === "details" && (
+                <button
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-[7px] border border-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                  onClick={() => setRunHistoryView("list")}
+                  type="button"
+                >
+                  <ArrowLeft size={13} />
+                  History
+                </button>
+              )}
+            </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">Use this space to reason about webhook data, module results, and what should happen next.</p>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            <div className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Current run</span>
-                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${runStage === "complete" ? "bg-emerald-400/10 text-emerald-200" : runStage === "error" ? "bg-red-danger/15 text-red-100" : runStage === "idle" ? "bg-white/[0.06] text-slate-300" : "bg-fuchsia-400/10 text-fuchsia-100"}`}>
-                  {formatStatus(runStage)}
-                </span>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                {runStage === "idle"
-                  ? "Run the flow to start a conversation from the incoming payload and module outcomes."
-                  : runStage === "listening"
-                    ? "Waiting for webhook data. When a payload arrives, the conversation will show what each module received and produced."
-                    : runStage === "playing"
-                      ? "The flow is replaying the latest payload across the modules."
-                      : runStage === "complete"
-                        ? "The run completed. Review the module notes below before changing the next decision."
-                        : runStage === "saving"
-                          ? "Saving the flow before running it."
-                          : "The run hit an error. Review the latest module event below."}
-              </p>
-            </div>
+          <div className={`min-h-0 flex-1 overflow-y-auto ${runHistoryView === "list" ? "space-y-4 bg-[#0B111B] px-3 py-4 text-slate-300" : "space-y-3 px-4 py-4"}`}>
+            {runHistoryView === "list" ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.08em] text-fuchsia-200">History</p>
+                  <button
+                    aria-label="Refresh history"
+                    className="grid size-8 place-items-center rounded-[7px] text-slate-400 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={runHistoryLoading}
+                    onClick={() => { void loadRunHistory(); }}
+                    type="button"
+                  >
+                    {runHistoryLoading ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+                  </button>
+                </div>
 
-            <div className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Prompt between modules</p>
-              <textarea
-                className="mt-3 min-h-[104px] w-full resize-y rounded-[8px] border border-white/10 bg-[#070b12] px-3 py-2 text-sm leading-5 text-slate-100 outline-none placeholder:text-slate-600"
-                placeholder="Example: If the webhook payload has a paid plan, send onboarding. If trial is expired, send recovery."
-                value={selectedPanel === "trigger" ? triggerDraft.notes : selectedStep ? getConfigString(selectedStep.config, "notes") : ""}
-                onChange={(event) => {
-                  if (selectedPanel === "trigger") {
-                    setTriggerDraft((draft) => ({ ...draft, notes: event.target.value }));
-                    return;
-                  }
-                  if (selectedStep) {
-                    updateSelectedStepConfig("notes", event.target.value);
-                  }
-                }}
-              />
-              <p className="mt-2 text-xs leading-5 text-slate-500">These notes stay with the selected module and help explain why the next module should run.</p>
-            </div>
+                <div className="flex items-center gap-2 rounded-[8px] border border-white/10 bg-white/[0.035] px-3 py-2 text-xs text-slate-400">
+                  <Pencil size={13} className="text-cyan-300" />
+                  <span className="truncate">{flow?.updated_at ? `Flow was edited ${formatDate(flow.updated_at)}` : "Flow changes will appear here."}</span>
+                </div>
 
-            <div className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Incoming data</p>
-                <button className="rounded-[7px] border border-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60" disabled={testingTrigger} onClick={() => { void loadLatestTestRun(); }} type="button">
-                  Refresh
-                </button>
-              </div>
-              {liveRun ? (
-                <pre className="mt-3 max-h-56 overflow-auto rounded-[8px] border border-white/10 bg-[#070b12] p-3 text-xs leading-5 text-slate-100">{JSON.stringify(liveRun.payload, null, 2)}</pre>
-              ) : (
-                <p className="mt-3 rounded-[8px] border border-dashed border-white/10 p-3 text-xs leading-5 text-slate-500">No webhook payload has been captured yet. Run a test or send data to the webhook endpoint.</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Module conversation</p>
-              {liveEvents.length > 0 ? liveEvents.map((event) => (
-                <article key={event.id} className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
+                <div className="space-y-6">
+                  {runHistory.length > 0 ? runHistory.map((run) => {
+                    const statusLabel = run.status === "completed" ? "Success" : run.status === "failed" ? "Failed" : formatStatus(run.status);
+                    const statusClass = run.status === "completed"
+                      ? "bg-emerald-400/15 text-emerald-200"
+                      : run.status === "failed"
+                        ? "bg-red-danger/15 text-red-100"
+                        : "bg-fuchsia-400/15 text-fuchsia-100";
+                    return (
+                      <button
+                        key={run.id}
+                        className="group -mx-1 w-[calc(100%+8px)] rounded-[8px] px-1 py-0.5 text-left transition hover:bg-white/[0.06]"
+                        onClick={() => selectRunFromHistory(run)}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 truncate text-sm font-semibold text-white">{formatHistoryDate(run.started_at || run.created_at)}</p>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${statusClass}`}>{statusLabel}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-slate-400">
+                          <span className="inline-flex items-center gap-1"><Zap size={11} /> {formatStatus(triggerDraft.triggerType)}</span>
+                          <span className="inline-flex items-center gap-1"><Clock size={11} /> {formatDuration(run.started_at, run.completed_at)}</span>
+                          <span className="inline-flex items-center gap-1"><Settings size={11} /> {run.events.length} operations</span>
+                          <span className="inline-flex items-center gap-1"><Eye size={11} /> {run.events.length} credits</span>
+                        </div>
+                        <div className="mt-1 text-[11px] leading-5 text-slate-400">
+                          <span className="inline-flex items-center gap-1"><HardDrive size={11} /> {formatDataSize(run.payload)}</span>
+                        </div>
+                      </button>
+                    );
+                  }) : (
+                    <div className="rounded-[10px] border border-dashed border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-slate-500">
+                      No runs yet. Run a test or send data to the webhook, then refresh this list.
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-3 rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-white">{event.title}</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatStatus(event.event_type)}</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{liveRun ? formatDateTime(liveRun.started_at || liveRun.created_at) : "No run selected"}</p>
+                      <h3 className="mt-1 truncate text-sm font-semibold text-white">{selectedRunLabel}</h3>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-500">{formatDate(event.created_at)}</span>
+                    <button className="inline-flex shrink-0 items-center gap-2 rounded-[7px] border border-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10" onClick={() => setRunHistoryView("list")} type="button">
+                      <ArrowLeft size={13} />
+                      Back
+                    </button>
                   </div>
-                  {getRunEventSummary(event) && (
-                    <p className="mt-3 rounded-[8px] border border-white/10 bg-[#070b12] px-2 py-1.5 text-xs leading-5 text-slate-300">{getRunEventSummary(event)}</p>
+
+                  {liveRun ? (
+                    <dl className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-1.5 text-xs leading-5">
+                      <dt className="font-semibold text-slate-400">Run ID:</dt>
+                      <dd className="truncate font-mono text-slate-200">{liveRun.id}</dd>
+                      <dt className="font-semibold text-slate-400">Run name:</dt>
+                      <dd className="text-slate-200">{selectedRunLabel}</dd>
+                      <dt className="font-semibold text-slate-400">Trigger:</dt>
+                      <dd className="text-slate-200">{formatStatus(triggerDraft.triggerType)}</dd>
+                      <dt className="font-semibold text-slate-400">Duration:</dt>
+                      <dd className="text-slate-200">{formatDuration(liveRun.started_at, liveRun.completed_at)}</dd>
+                      <dt className="font-semibold text-slate-400">Operations:</dt>
+                      <dd className="text-slate-200">{orderedLiveEvents.length}</dd>
+                      <dt className="font-semibold text-slate-400">Credits:</dt>
+                      <dd className="text-slate-200">{orderedLiveEvents.length}</dd>
+                      <dt className="font-semibold text-slate-400">Data size:</dt>
+                      <dd className="text-slate-200">{formatDataSize(liveRun.payload)}</dd>
+                      <dt className="font-semibold text-slate-400">Source run:</dt>
+                      <dd className="text-slate-200">-</dd>
+                    </dl>
+                  ) : (
+                    <p className="rounded-[8px] border border-dashed border-white/10 p-3 text-xs leading-5 text-slate-500">Select a run to inspect its operation breakdown.</p>
                   )}
-                </article>
-              )) : (
-                <div className="rounded-[10px] border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-500">
-                  Module results will appear here after a run. The assistant view is meant to show what happened between modules, not module settings.
                 </div>
-              )}
-            </div>
+
+                <div className="flex items-center gap-2 border-y border-white/10 py-2">
+                  <span className="rounded-full bg-cyan-300/15 px-3 py-1 text-[11px] font-semibold text-cyan-100">Timeline</span>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold text-slate-400">Raw events</span>
+                </div>
+
+                <div className="space-y-2.5">
+                  {visibleRunEvents.length > 0 ? visibleRunEvents.map((event, index) => {
+                    const status = getRunEventStatus(event);
+                    return (
+                      <article key={event.id} className="rounded-[10px] border border-white/10 bg-white/[0.035] p-3">
+                        <div className="flex items-start gap-2">
+                          {status === "completed" ? (
+                            <CheckCircle2 className="mt-0.5 text-emerald-400" size={15} />
+                          ) : (
+                            <CircleSlash className={`mt-0.5 ${status === "failed" ? "text-red-300" : "text-red-danger"}`} size={15} />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className={`max-w-[180px] truncate rounded-full px-2 py-0.5 text-[11px] font-bold ${getRunEventAccent(event)}`}>{getRunEventModuleName(event)}</span>
+                              <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-1.5 text-[10px] text-slate-400">#{getRunEventOperation(event, index)}</span>
+                              <span className="ml-auto shrink-0 text-[11px] text-slate-500">0.{index + 2}s</span>
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-400">{getRunEventLogMessage(event)}</p>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  }) : (
+                    <div className="rounded-[10px] border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-500">
+                      Module results will appear here after a run.
+                    </div>
+                  )}
+                </div>
+
+                {orderedLiveEvents.length > visibleRunEvents.length && (
+                  <div className="flex justify-center pt-2">
+                    <button className="rounded-[7px] border border-violet-400 px-3 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/10" onClick={() => setRunLogExpanded(true)} type="button">
+                      Show all
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </aside>
       </section>

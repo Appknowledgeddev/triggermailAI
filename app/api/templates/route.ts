@@ -52,6 +52,42 @@ function sanitizeAiMessages(value: unknown) {
     });
 }
 
+function sanitizeGlobalStyles(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const record = value as {
+    globalBackground?: unknown;
+    globalBackgroundPattern?: unknown;
+    globalBackgroundCanvas?: unknown;
+    previewPadding?: unknown;
+    emailWidth?: unknown;
+    emailBorderRadius?: unknown;
+    emailBoxShadow?: unknown;
+    bodyTextInsetLeft?: unknown;
+    bodyTextInsetRight?: unknown;
+    bodyContentMargin?: unknown;
+    bodyTextSize?: unknown;
+    bodyTextColor?: unknown;
+  };
+
+  return {
+    ...(typeof record.globalBackground === "string" ? { globalBackground: record.globalBackground.slice(0, 32) } : {}),
+    ...(typeof record.globalBackgroundPattern === "string" ? { globalBackgroundPattern: record.globalBackgroundPattern.slice(0, 32) } : {}),
+    ...(typeof record.globalBackgroundCanvas === "string" ? { globalBackgroundCanvas: record.globalBackgroundCanvas.slice(0, 32) } : {}),
+    ...(typeof record.previewPadding === "number" ? { previewPadding: Math.max(0, Math.min(120, record.previewPadding)) } : {}),
+    ...(typeof record.emailWidth === "number" ? { emailWidth: Math.max(320, Math.min(1200, record.emailWidth)) } : {}),
+    ...(typeof record.emailBorderRadius === "number" ? { emailBorderRadius: Math.max(0, Math.min(64, record.emailBorderRadius)) } : {}),
+    ...(typeof record.emailBoxShadow === "string" ? { emailBoxShadow: record.emailBoxShadow.slice(0, 160) } : {}),
+    ...(typeof record.bodyTextInsetLeft === "number" ? { bodyTextInsetLeft: Math.max(0, Math.min(160, record.bodyTextInsetLeft)) } : {}),
+    ...(typeof record.bodyTextInsetRight === "number" ? { bodyTextInsetRight: Math.max(0, Math.min(160, record.bodyTextInsetRight)) } : {}),
+    ...(typeof record.bodyContentMargin === "number" ? { bodyContentMargin: Math.max(0, Math.min(160, record.bodyContentMargin)) } : {}),
+    ...(typeof record.bodyTextSize === "number" ? { bodyTextSize: Math.max(10, Math.min(32, record.bodyTextSize)) } : {}),
+    ...(typeof record.bodyTextColor === "string" ? { bodyTextColor: record.bodyTextColor.slice(0, 32) } : {}),
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const { supabase, user } = await getAdminContext(request);
@@ -65,6 +101,7 @@ export async function POST(request: Request) {
       fromEmail?: string | null;
       html?: string;
       customHead?: string | null;
+      globalStyles?: unknown;
       aiMessages?: unknown;
     };
 
@@ -72,7 +109,7 @@ export async function POST(request: Request) {
     const subject = body.subject?.trim();
     const category = body.category?.trim() || "general";
     const folderId = body.folderId || null;
-    const html = body.html?.trim() || defaultHtml(name || "Untitled Template", subject || "Untitled subject");
+    const html = typeof body.html === "string" ? body.html.trim() : defaultHtml(name || "Untitled Template", subject || "Untitled subject");
 
     if (!name || !subject) {
       return NextResponse.json({ error: "Add a template name and subject first." }, { status: 400 });
@@ -110,7 +147,7 @@ export async function POST(request: Request) {
       from_email: body.fromEmail?.trim() || null,
       html,
       text: htmlToText(html),
-      design: { editor: "html", customHead: body.customHead || "", aiMessages: sanitizeAiMessages(body.aiMessages), createdAt: new Date().toISOString() },
+      design: { editor: "html", customHead: body.customHead || "", globalStyles: sanitizeGlobalStyles(body.globalStyles), aiMessages: sanitizeAiMessages(body.aiMessages), createdAt: new Date().toISOString() },
       variables: extractVariables(html),
       status: "draft",
       created_by: user.id,

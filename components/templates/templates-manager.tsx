@@ -59,7 +59,7 @@ function getTemplateDesignHead(design: EmailTemplate["design"]) {
   return "";
 }
 
-function buildTemplatePreviewDocument(template: EmailTemplate) {
+function buildTemplatePreviewDocument(template: EmailTemplate, scale = 0.14) {
   const customHead = getTemplateDesignHead(template.design);
   const html = template.html?.trim() || `
 <div style="font-family:Arial,sans-serif;color:#111827;padding:32px;line-height:1.6;">
@@ -74,14 +74,18 @@ function buildTemplatePreviewDocument(template: EmailTemplate) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { margin: 0; background: #eef2ff; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #eef2ff; }
       img { max-width: 100%; height: auto; }
+      .preview-stage { width: 100%; height: 100%; display: flex; justify-content: center; align-items: flex-start; overflow: hidden; box-sizing: border-box; padding-top: 5px; }
+      .preview-scale { width: 720px; flex: 0 0 720px; transform: scale(${scale}); transform-origin: top center; }
     </style>
     ${customHead}
   </head>
   <body>
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${template.preheader || ""}</div>
-    ${html}
+    <div class="preview-stage">
+      <div class="preview-scale">${html}</div>
+    </div>
   </body>
 </html>`;
 }
@@ -491,19 +495,19 @@ export function TemplatesManager() {
               )}
             </div>
           ) : filteredTemplates.length === 0 ? (
-            <div className="mt-5 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.02]">
-              <div className="px-4 py-12 text-center">
-                <div className="mx-auto grid size-11 place-items-center rounded-[9px] bg-violet-brand/15 text-fuchsia-300">
-                  <FileText size={20} />
+                <div className="mt-5 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.02]">
+                  <div className="px-4 py-10 text-center">
+                    <div className="mx-auto grid size-11 place-items-center rounded-[9px] bg-violet-brand/15 text-fuchsia-300">
+                      <FileText size={20} />
+                    </div>
+                    <h2 className="mt-4 text-base font-semibold text-white">{selectedFolder ? `No saved templates in ${selectedFolder.name}` : "No saved templates yet"}</h2>
+                    <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-400">
+                      Create a template in the builder, customise it, then save it to your reusable template library.
+                    </p>
+                  </div>
                 </div>
-                <h2 className="mt-4 text-base font-semibold text-white">{selectedFolder ? `No templates in ${selectedFolder.name}` : "No templates yet"}</h2>
-                <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-400">
-                  {selectedFolder ? "Move templates into this folder from the template row dropdown." : "Create a template to start building your reusable email library."}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <>
+              ) : (
+                <>
               {folders.length > 1 && folderFilter !== "all_templates" && (
                 <button className="mt-5 inline-flex h-9 items-center gap-2 rounded-[8px] border border-white/10 bg-white/[0.04] px-3 text-[13px] font-semibold text-slate-200 transition hover:bg-white/[0.08]" onClick={() => setFolderFilter("all")} type="button">
                   <Folder size={14} />
@@ -516,7 +520,7 @@ export function TemplatesManager() {
                   <article key={template.id} className="grid gap-3 p-3 transition hover:bg-white/[0.04] lg:grid-cols-[112px_minmax(0,1fr)_150px_170px_130px] lg:items-center">
                     <div className="relative h-[76px] overflow-hidden rounded-[8px] border border-white/10 bg-slate-100 shadow-inner">
                       <iframe
-                        className="pointer-events-none h-[520px] w-[620px] origin-top-left scale-[0.18] bg-white"
+                        className="pointer-events-none h-full w-full bg-white"
                         loading="lazy"
                         sandbox=""
                         srcDoc={buildTemplatePreviewDocument(template)}
@@ -575,8 +579,8 @@ export function TemplatesManager() {
                 ))}
               </div>
               </div>
-            </>
-          )}
+                </>
+              )}
         </Panel>
       </section>
     </AppShell>

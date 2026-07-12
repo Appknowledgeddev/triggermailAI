@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendEmail, type DeliveryProvider } from "@/lib/email/delivery";
+import { buildSendableTemplateHtml, getEmailCustomHead, getEmailGlobalStyles } from "@/lib/email/template-html";
 import { getAdminContext, getErrorMessage } from "@/lib/supabase/workspace-admin";
 import type { Json } from "@/lib/supabase/types";
 
@@ -29,6 +30,7 @@ type EmailTemplateRow = {
   from_name: string | null;
   from_email: string | null;
   html: string | null;
+  design: Json;
 };
 type WorkspaceSender = {
   default_from_name: string | null;
@@ -231,7 +233,12 @@ async function sendEmailModule(
   const renderedPreheader = renderHandlebars(template.preheader || "", renderContext);
   const subject = renderHandlebars(template.subject || "Trigger Mail AI", renderContext);
   const renderedHtml = template.html ? renderHandlebars(template.html, renderContext) : "";
-  const html = `${renderedPreheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${renderedPreheader}</div>` : ""}${renderedHtml}`;
+  const html = buildSendableTemplateHtml({
+    html: renderedHtml,
+    preheader: renderedPreheader,
+    customHead: getEmailCustomHead(template.design),
+    globalStyles: getEmailGlobalStyles(template.design),
+  });
   const configuredProvider = typeof config.sendingAccountProvider === "string" ? config.sendingAccountProvider : "";
   const configuredAccountId = typeof config.sendingAccountId === "string" ? config.sendingAccountId : "";
   const connectedAccountId = configuredAccountId || defaultSendingAccount?.id || null;
@@ -396,7 +403,7 @@ async function executeFlowSteps(
         } else {
           const { data: template, error: templateError } = await supabase
             .from("email_templates")
-            .select("id, name, subject, preheader, from_name, from_email, html")
+            .select("id, name, subject, preheader, from_name, from_email, html, design")
             .eq("id", step.template_id)
             .maybeSingle();
 

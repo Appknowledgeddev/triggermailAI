@@ -46,6 +46,8 @@ const fallbackNavUser: NavUser = {
   initials: "TM",
 };
 
+const authCheckTimeoutMs = 7000;
+
 function initialsFromName(name: string, email: string) {
   const source = name && name !== "Signed in" ? name : email;
   const parts = source
@@ -122,18 +124,26 @@ export function AppShell({
         return;
       }
 
-      const { data } = await supabase
-        .from("profiles")
-        .select("full_name, avatar_url")
-        .eq("id", user.id)
-        .maybeSingle();
+      let profile: { full_name: string | null; avatar_url: string | null } | null = null;
+
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("full_name, avatar_url")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        profile = data;
+      } catch {
+        profile = null;
+      }
 
       if (!mounted) {
         return;
       }
 
-      const name = data?.full_name || authUser.name;
-      const avatarUrl = data?.avatar_url || authUser.avatarUrl;
+      const name = profile?.full_name || authUser.name;
+      const avatarUrl = profile?.avatar_url || authUser.avatarUrl;
 
       setNavUser({
         name,
@@ -143,17 +153,38 @@ export function AppShell({
       });
     }
 
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-        return;
-      }
+    async function checkAuth() {
+      try {
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), authCheckTimeoutMs)),
+        ]);
 
-      void loadNavUser(data.user);
-      if (mounted) {
+        if (!mounted) {
+          return;
+        }
+
+        const user = sessionResult?.data.session?.user || null;
+
+        if (!user) {
+          setAuthChecked(false);
+          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+          return;
+        }
+
         setAuthChecked(true);
+        void loadNavUser(user);
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setAuthChecked(false);
+        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       }
-    });
+    }
+
+    void checkAuth();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session?.user) {

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { sendEmail, type DeliveryProvider } from "@/lib/email/delivery";
+import { buildSendableTemplateHtml } from "@/lib/email/template-html";
+import type { EmailGlobalStyles } from "@/lib/email/template-html";
 import { ensureWorkspaceForUser, getAdminContext, getErrorMessage } from "@/lib/supabase/workspace-admin";
 
 function getValueByPath(data: Record<string, unknown>, path: string) {
@@ -67,6 +69,8 @@ export async function POST(request: Request) {
       fromName?: string | null;
       fromEmail?: string | null;
       html?: string;
+      customHead?: string;
+      globalStyles?: Partial<EmailGlobalStyles>;
       data?: Record<string, unknown>;
       provider?: DeliveryProvider;
       connectedAccountId?: string | null;
@@ -86,6 +90,12 @@ export async function POST(request: Request) {
     const renderedSubject = renderHandlebars(body.subject?.trim() || "Trigger Mail AI test email", testData);
     const renderedPreheader = renderHandlebars(body.preheader?.trim() || "", testData);
     const renderedHtml = renderHandlebars(body.html, testData);
+    const sendableHtml = buildSendableTemplateHtml({
+      html: renderedHtml,
+      preheader: renderedPreheader,
+      customHead: body.customHead || "",
+      globalStyles: body.globalStyles,
+    });
     const fromName = body.fromName?.trim() || workspace.default_from_name?.trim() || "Trigger Mail AI";
     const configuredFrom = body.fromEmail?.trim() || workspace.default_from_email?.trim() || process.env.TEST_EMAIL_FROM || "onboarding@resend.dev";
     const from = configuredFrom.includes("<") ? configuredFrom : `${fromName} <${configuredFrom}>`;
@@ -115,7 +125,8 @@ export async function POST(request: Request) {
       senderProvider: provider,
       connectedAccountId,
       handlebarData: testData,
-      htmlPreview: renderedHtml.replace(/\s+/g, " ").slice(0, 500),
+      htmlPreview: sendableHtml.replace(/\s+/g, " ").slice(0, 8000),
+      includesBodyCard: /data-builder-empty-body|height="?520"?|bgcolor="?#[fF]{6}"?/i.test(sendableHtml),
     };
 
     const result = await sendEmail({
@@ -124,7 +135,7 @@ export async function POST(request: Request) {
       from,
       to,
       subject: renderedSubject,
-      html: `${renderedPreheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${renderedPreheader}</div>` : ""}${renderedHtml}`,
+      html: sendableHtml,
     });
 
     if (!result.ok) {
