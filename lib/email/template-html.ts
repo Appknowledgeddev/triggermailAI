@@ -185,21 +185,80 @@ function extractBodyPatternSections(html: string) {
 function buildEmailBackgroundStyle(styles: EmailGlobalStyles) {
   const pattern = styles.globalBackgroundPattern;
   const canvas = styles.globalBackgroundCanvas;
-  const image = pattern === "dots"
-    ? "radial-gradient(circle, rgba(148,163,184,0.36) 1px, transparent 1.5px)"
-    : pattern === "grid"
-      ? "linear-gradient(rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.18) 1px, transparent 1px)"
-      : pattern === "diagonal"
-        ? "repeating-linear-gradient(135deg, rgba(148,163,184,0.20) 0 1px, transparent 1px 13px)"
-        : canvas === "paper"
-          ? "linear-gradient(135deg, rgba(255,255,255,0.12) 0 25%, transparent 25% 50%, rgba(15,23,42,0.035) 50% 75%, transparent 75% 100%)"
-          : "";
-  const size = pattern === "dots" ? "18px 18px" : pattern === "grid" ? "22px 22px" : canvas === "paper" ? "24px 24px" : "";
+  const backgroundColor = getEmailCanvasColor(styles.globalBackground);
+  const images: string[] = [];
+  const sizes: string[] = [];
+  const positions: string[] = [];
+
+  if (canvas === "paper") {
+    images.push("linear-gradient(135deg, rgba(255,255,255,0.12) 0 25%, transparent 25% 50%, rgba(15,23,42,0.035) 50% 75%, transparent 75% 100%)");
+    sizes.push("24px 24px");
+    positions.push("0 0");
+  } else if (canvas === "studio") {
+    images.push("radial-gradient(circle at 18% 12%, rgba(217,70,239,0.20), transparent 30%)", "radial-gradient(circle at 82% 18%, rgba(59,130,246,0.16), transparent 28%)", "radial-gradient(circle at 50% 92%, rgba(16,185,129,0.10), transparent 30%)");
+    sizes.push("100% 100%", "100% 100%", "100% 100%");
+    positions.push("0 0", "0 0", "0 0");
+  } else if (canvas === "blueprint") {
+    images.push("linear-gradient(rgba(148,163,184,0.16) 1px, transparent 1px)", "linear-gradient(90deg, rgba(148,163,184,0.16) 1px, transparent 1px)");
+    sizes.push("48px 48px", "48px 48px");
+    positions.push("-1px -1px", "-1px -1px");
+  } else if (canvas === "mist") {
+    images.push("radial-gradient(circle at 30% 20%, rgba(255,255,255,0.26), transparent 34%)", "radial-gradient(circle at 72% 72%, rgba(148,163,184,0.18), transparent 36%)");
+    sizes.push("100% 100%", "100% 100%");
+    positions.push("0 0", "0 0");
+  } else if (canvas === "aurora") {
+    images.push("linear-gradient(120deg, rgba(217,70,239,0.20), transparent 34%, rgba(34,211,238,0.16), transparent 72%, rgba(16,185,129,0.14))");
+    sizes.push("100% 100%");
+    positions.push("0 0");
+  } else if (canvas === "linen") {
+    images.push("repeating-linear-gradient(0deg, rgba(255,255,255,0.12) 0 1px, transparent 1px 4px)", "repeating-linear-gradient(90deg, rgba(15,23,42,0.05) 0 1px, transparent 1px 5px)");
+    sizes.push("auto", "auto");
+    positions.push("0 0", "0 0");
+  }
+
+  if (pattern === "dots") {
+    images.push("radial-gradient(circle, rgba(148,163,184,0.36) 1px, transparent 1.5px)");
+    sizes.push("18px 18px");
+    positions.push("0 0");
+  } else if (pattern === "grid") {
+    images.push("linear-gradient(rgba(148,163,184,0.18) 1px, transparent 1px)", "linear-gradient(90deg, rgba(148,163,184,0.18) 1px, transparent 1px)");
+    sizes.push("22px 22px", "22px 22px");
+    positions.push("-1px -1px", "-1px -1px");
+  } else if (pattern === "diagonal") {
+    images.push("repeating-linear-gradient(135deg, rgba(148,163,184,0.20) 0 1px, transparent 1px 13px)");
+    sizes.push("auto");
+    positions.push("0 0");
+  } else if (pattern === "cross") {
+    images.push("repeating-linear-gradient(45deg, rgba(148,163,184,0.14) 0 1px, transparent 1px 14px)", "repeating-linear-gradient(135deg, rgba(148,163,184,0.14) 0 1px, transparent 1px 14px)");
+    sizes.push("auto", "auto");
+    positions.push("0 0", "0 0");
+  } else if (pattern === "glow") {
+    images.push("radial-gradient(circle at 50% 0%, rgba(255,255,255,0.20), transparent 34%)");
+    sizes.push("100% 100%");
+    positions.push("0 0");
+  } else if (pattern === "waves") {
+    images.push("radial-gradient(ellipse at top, transparent 52%, rgba(148,163,184,0.18) 53%, transparent 56%)");
+    sizes.push("38px 24px");
+    positions.push("0 0");
+  } else if (pattern === "checker") {
+    images.push("linear-gradient(45deg, rgba(148,163,184,0.16) 25%, transparent 25% 75%, rgba(148,163,184,0.16) 75%)", "linear-gradient(45deg, rgba(148,163,184,0.16) 25%, transparent 25% 75%, rgba(148,163,184,0.16) 75%)");
+    sizes.push("24px 24px", "24px 24px");
+    positions.push("0 0", "12px 12px");
+  } else if (pattern === "rings") {
+    images.push("radial-gradient(circle, transparent 0 7px, rgba(148,163,184,0.22) 8px, transparent 9px)");
+    sizes.push("34px 34px");
+    positions.push("0 0");
+  } else if (pattern === "plus") {
+    images.push("linear-gradient(rgba(148,163,184,0.22) 2px, transparent 2px)", "linear-gradient(90deg, rgba(148,163,184,0.22) 2px, transparent 2px)");
+    sizes.push("28px 28px", "28px 28px");
+    positions.push("13px 13px", "13px 13px");
+  }
 
   return [
-    `background-color:${styles.globalBackground}`,
-    image ? `background-image:${image}` : "",
-    size ? `background-size:${size}` : "",
+    `background-color:${backgroundColor}`,
+    images.length ? `background-image:${images.join(",")}` : "",
+    sizes.length ? `background-size:${sizes.join(",")}` : "",
+    positions.length ? `background-position:${positions.join(",")}` : "",
   ].filter(Boolean).join(";");
 }
 
