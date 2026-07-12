@@ -3113,6 +3113,7 @@ export function TemplateBuilder() {
     html: joinSections(sendPreviewSections),
     preheader,
     customHead,
+    assetBaseUrl: typeof window === "undefined" ? "" : window.location.origin,
     globalStyles: {
       globalBackground,
       globalBackgroundPattern,
@@ -5202,15 +5203,16 @@ export function TemplateBuilder() {
           data: handlebarData,
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; id?: string; error?: string; attemptedEmail?: { htmlPreview?: string; includesBodyCard?: boolean } };
+      const payload = (await response.json()) as { ok?: boolean; id?: string; error?: string; attemptedEmail?: { htmlPreview?: string; includesBodyCard?: boolean; patternImageUrl?: string } };
 
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "The test email could not be sent.");
       }
 
       const includesBodyCard = Boolean(payload.attemptedEmail?.includesBodyCard);
+      const patternImageUrl = payload.attemptedEmail?.patternImageUrl || "";
       setTestSendHtmlPreview(payload.attemptedEmail?.htmlPreview || "");
-      setTestSendMessage(`Test email sent to ${testEmailTo}. Body card payload: ${includesBodyCard ? "included" : "not detected"}.`);
+      setTestSendMessage(`Test email sent to ${testEmailTo}. Body card payload: ${includesBodyCard ? "included" : "not detected"}.${patternImageUrl ? ` Pattern image: ${patternImageUrl}` : ""}`);
     } catch (sendError) {
       setTestSendError(getErrorMessage(sendError, "The test email could not be sent."));
     } finally {

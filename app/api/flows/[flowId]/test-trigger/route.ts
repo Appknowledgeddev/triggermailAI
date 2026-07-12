@@ -196,7 +196,16 @@ function isEmail(value: string) {
 }
 
 function getAppBaseUrl(request: Request) {
-  return process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : new URL(request.url).origin);
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "";
+  const requestOrigin = new URL(request.url).origin;
+  const isLocalRequest = /\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(requestOrigin);
+  const isLocalConfiguredUrl = /\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(configuredUrl);
+
+  if (configuredUrl && (!isLocalConfiguredUrl || isLocalRequest)) {
+    return configuredUrl;
+  }
+
+  return process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : requestOrigin;
 }
 
 function buildStepData(config: Json, context: Record<string, unknown>) {

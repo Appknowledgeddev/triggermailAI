@@ -49,7 +49,16 @@ function isEmail(value: string) {
 }
 
 function getAppBaseUrl(request: Request) {
-  return process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : new URL(request.url).origin);
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "";
+  const requestOrigin = new URL(request.url).origin;
+  const isLocalRequest = /\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(requestOrigin);
+  const isLocalConfiguredUrl = /\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(configuredUrl);
+
+  if (configuredUrl && (!isLocalConfiguredUrl || isLocalRequest)) {
+    return configuredUrl;
+  }
+
+  return process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : requestOrigin;
 }
 
 export async function POST(request: Request) {
@@ -132,6 +141,7 @@ export async function POST(request: Request) {
       handlebarData: testData,
       htmlPreview: sendableHtml.replace(/\s+/g, " ").slice(0, 8000),
       includesBodyCard: /data-builder-empty-body|height="?520"?|bgcolor="?#[fF]{6}"?/i.test(sendableHtml),
+      patternImageUrl: sendableHtml.match(/background="([^"]*email-patterns[^"]*)"/)?.[1] || "",
     };
 
     const result = await sendEmail({
