@@ -114,7 +114,7 @@ function getEmailPatternAssetUrl(styles: EmailGlobalStyles, assetBaseUrl?: strin
 
   const baseUrl = normalizeBaseUrl(assetBaseUrl || process.env.NEXT_PUBLIC_APP_URL || "");
 
-  return baseUrl ? `${baseUrl}/email-patterns/${assetName}.svg` : "";
+  return baseUrl ? `${baseUrl}/email-patterns/${assetName}.png` : "";
 }
 
 function extractMarkedTable(html: string, marker: string) {
@@ -302,6 +302,21 @@ function buildEmailBackgroundStyle(styles: EmailGlobalStyles) {
   ].filter(Boolean).join(";");
 }
 
+function buildSendEmailBackgroundStyle(styles: EmailGlobalStyles, patternAssetUrl: string) {
+  const backgroundColor = getEmailCanvasColor(styles.globalBackground);
+
+  if (!patternAssetUrl) {
+    return buildEmailBackgroundStyle(styles);
+  }
+
+  return [
+    `background-color:${backgroundColor}`,
+    `background-image:url('${patternAssetUrl}')`,
+    "background-repeat:repeat",
+    "background-position:top left",
+  ].join(";");
+}
+
 function getEmailCanvasColor(backgroundColor: string) {
   const normalizedColor = backgroundColor.trim().toLowerCase();
 
@@ -448,6 +463,7 @@ export function buildSendableTemplateHtml(input: {
   const canvasColor = getEmailCanvasColor(styles.globalBackground);
   const patternAssetUrl = getEmailPatternAssetUrl(styles, input.assetBaseUrl);
   const patternBackgroundAttribute = patternAssetUrl ? ` background="${escapeHtml(patternAssetUrl)}"` : "";
+  const sendBackgroundStyle = buildSendEmailBackgroundStyle(styles, patternAssetUrl);
   const { headerHtml, bodyHtml, footerHtml } = splitEmailSections(input.html);
   const bodyLayers = extractBodyPatternSections(bodyHtml);
   const bodyHtmlWithTextStyles = applyBodyTextStylesHtml(
@@ -512,11 +528,11 @@ export function buildSendableTemplateHtml(input: {
     </style>
     ${input.customHead || ""}
   </head>
-  <body bgcolor="${canvasColor}"${patternBackgroundAttribute} style="margin:0;padding:0;background-color:${canvasColor};${buildEmailBackgroundStyle(styles)}">
+  <body bgcolor="${canvasColor}"${patternBackgroundAttribute} style="margin:0;padding:0;background-color:${canvasColor};${sendBackgroundStyle}">
     ${hiddenPreheader}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${canvasColor}"${patternBackgroundAttribute} style="background-color:${canvasColor};${buildEmailBackgroundStyle(styles)}">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${canvasColor}"${patternBackgroundAttribute} style="background-color:${canvasColor};${sendBackgroundStyle}">
       <tr>
-        <td align="center" bgcolor="${canvasColor}"${patternBackgroundAttribute} style="padding:${padding}px;background-color:${canvasColor};">
+        <td align="center" bgcolor="${canvasColor}"${patternBackgroundAttribute} style="padding:${padding}px;background-color:${canvasColor};${sendBackgroundStyle}">
           ${headerHtml}
           <table role="presentation" width="${shellWidth}" cellspacing="0" cellpadding="0" border="0" style="${shellStyle}">
             <tr>
