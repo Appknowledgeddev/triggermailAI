@@ -77,6 +77,46 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+function normalizeBaseUrl(value: string) {
+  return value.trim().replace(/\/+$/, "");
+}
+
+function getEmailPatternAssetName(styles: EmailGlobalStyles) {
+  const pattern = styles.globalBackgroundPattern;
+  const canvas = styles.globalBackgroundCanvas;
+  const emailSafePatterns = ["dots", "grid", "diagonal", "cross", "checker", "rings", "plus", "waves"];
+
+  if (emailSafePatterns.includes(pattern)) {
+    return pattern;
+  }
+
+  if (canvas === "linen") {
+    return "linen";
+  }
+
+  if (canvas === "paper") {
+    return "diagonal";
+  }
+
+  if (canvas === "blueprint") {
+    return "grid";
+  }
+
+  return "";
+}
+
+function getEmailPatternAssetUrl(styles: EmailGlobalStyles, assetBaseUrl?: string) {
+  const assetName = getEmailPatternAssetName(styles);
+
+  if (!assetName) {
+    return "";
+  }
+
+  const baseUrl = normalizeBaseUrl(assetBaseUrl || process.env.NEXT_PUBLIC_APP_URL || "");
+
+  return baseUrl ? `${baseUrl}/email-patterns/${assetName}.svg` : "";
+}
+
 function extractMarkedTable(html: string, marker: string) {
   const markerIndex = html.indexOf(marker);
 
@@ -398,6 +438,7 @@ export function buildSendableTemplateHtml(input: {
   preheader?: string;
   customHead?: string;
   globalStyles?: Partial<EmailGlobalStyles>;
+  assetBaseUrl?: string;
 }) {
   const styles = { ...defaultGlobalStyles, ...input.globalStyles };
   const padding = Math.max(0, Math.round(styles.previewPadding));
@@ -405,6 +446,8 @@ export function buildSendableTemplateHtml(input: {
   const width = Math.max(320, Math.round(styles.emailWidth));
   const bodyMinHeight = 520;
   const canvasColor = getEmailCanvasColor(styles.globalBackground);
+  const patternAssetUrl = getEmailPatternAssetUrl(styles, input.assetBaseUrl);
+  const patternBackgroundAttribute = patternAssetUrl ? ` background="${escapeHtml(patternAssetUrl)}"` : "";
   const { headerHtml, bodyHtml, footerHtml } = splitEmailSections(input.html);
   const bodyLayers = extractBodyPatternSections(bodyHtml);
   const bodyHtmlWithTextStyles = applyBodyTextStylesHtml(
@@ -469,11 +512,11 @@ export function buildSendableTemplateHtml(input: {
     </style>
     ${input.customHead || ""}
   </head>
-  <body bgcolor="${canvasColor}" style="margin:0;padding:0;background-color:${canvasColor};${buildEmailBackgroundStyle(styles)}">
+  <body bgcolor="${canvasColor}"${patternBackgroundAttribute} style="margin:0;padding:0;background-color:${canvasColor};${buildEmailBackgroundStyle(styles)}">
     ${hiddenPreheader}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${canvasColor}" style="background-color:${canvasColor};${buildEmailBackgroundStyle(styles)}">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${canvasColor}"${patternBackgroundAttribute} style="background-color:${canvasColor};${buildEmailBackgroundStyle(styles)}">
       <tr>
-        <td align="center" bgcolor="${canvasColor}" style="padding:${padding}px;background-color:${canvasColor};">
+        <td align="center" bgcolor="${canvasColor}"${patternBackgroundAttribute} style="padding:${padding}px;background-color:${canvasColor};">
           ${headerHtml}
           <table role="presentation" width="${shellWidth}" cellspacing="0" cellpadding="0" border="0" style="${shellStyle}">
             <tr>

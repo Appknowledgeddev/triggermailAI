@@ -173,6 +173,10 @@ function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function getAppBaseUrl(request: Request) {
+  return process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : new URL(request.url).origin);
+}
+
 function buildStepData(config: Json, context: Record<string, unknown>) {
   const handlebarData = getConfigStringRecord(config, "handlebarData");
   return Object.fromEntries(Object.entries(handlebarData).map(([key, value]) => [key, renderHandlebars(value, context)]));
@@ -196,6 +200,7 @@ async function sendEmailModule(
   context: Record<string, unknown>,
   workspaceSender: WorkspaceSender | null,
   defaultSendingAccount: DefaultSendingAccount,
+  assetBaseUrl: string,
 ) {
   const config = getConfigRecord(step.config);
   const stepData = buildStepData(step.config, context);
@@ -216,6 +221,7 @@ async function sendEmailModule(
     preheader: renderedPreheader,
     customHead: getEmailCustomHead(template.design),
     globalStyles: getEmailGlobalStyles(template.design),
+    assetBaseUrl,
   });
   const configuredProvider = typeof config.sendingAccountProvider === "string" ? config.sendingAccountProvider : "";
   const configuredAccountId = typeof config.sendingAccountId === "string" ? config.sendingAccountId : "";
@@ -286,6 +292,7 @@ async function executeFlowSteps(
   flow: { id: string; workspace_id: string | null },
   flowRunId: string,
   triggerPayload: Json,
+  assetBaseUrl: string,
 ) {
   if (!flow.workspace_id) {
     return { completed: 0, failed: 0 };
@@ -401,6 +408,7 @@ async function executeFlowSteps(
               context,
               workspaceSender,
               defaultSendingAccount as DefaultSendingAccount,
+              assetBaseUrl,
             );
             metadata.result = result;
             title = result.ok ? `${step.name} sent` : `${step.name} ${result.skipped ? "skipped" : "failed"}`;
@@ -621,7 +629,7 @@ export async function POST(request: Request, context: RouteContext) {
       throw runStartError;
     }
 
-    const execution = await executeFlowSteps(supabase, flow, flowRun.id, payload);
+    const execution = await executeFlowSteps(supabase, flow, flowRun.id, payload, getAppBaseUrl(request));
 
     const { error: updateTriggerError } = await supabase
       .from("triggers")

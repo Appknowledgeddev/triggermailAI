@@ -48,6 +48,10 @@ function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function getAppBaseUrl(request: Request) {
+  return process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : new URL(request.url).origin);
+}
+
 export async function POST(request: Request) {
   try {
     const { supabase, user } = await getAdminContext(request);
@@ -95,6 +99,7 @@ export async function POST(request: Request) {
       preheader: renderedPreheader,
       customHead: body.customHead || "",
       globalStyles: body.globalStyles,
+      assetBaseUrl: getAppBaseUrl(request),
     });
     const fromName = body.fromName?.trim() || workspace.default_from_name?.trim() || "Trigger Mail AI";
     const configuredFrom = body.fromEmail?.trim() || workspace.default_from_email?.trim() || process.env.TEST_EMAIL_FROM || "onboarding@resend.dev";

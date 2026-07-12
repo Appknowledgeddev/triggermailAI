@@ -195,6 +195,10 @@ function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function getAppBaseUrl(request: Request) {
+  return process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : new URL(request.url).origin);
+}
+
 function buildStepData(config: Json, context: Record<string, unknown>) {
   const handlebarData = getConfigStringRecord(config, "handlebarData");
   return Object.fromEntries(Object.entries(handlebarData).map(([key, value]) => [key, renderHandlebars(value, context)]));
@@ -218,6 +222,7 @@ async function sendEmailModule(
   context: Record<string, unknown>,
   workspaceSender: WorkspaceSender | null,
   defaultSendingAccount: DefaultSendingAccount,
+  assetBaseUrl: string,
 ) {
   const stepData = buildStepData(step.config, context);
   const renderContext = {
@@ -238,6 +243,7 @@ async function sendEmailModule(
     preheader: renderedPreheader,
     customHead: getEmailCustomHead(template.design),
     globalStyles: getEmailGlobalStyles(template.design),
+    assetBaseUrl,
   });
   const configuredProvider = typeof config.sendingAccountProvider === "string" ? config.sendingAccountProvider : "";
   const configuredAccountId = typeof config.sendingAccountId === "string" ? config.sendingAccountId : "";
@@ -308,6 +314,7 @@ async function executeFlowSteps(
   flow: Awaited<ReturnType<typeof getAccessibleFlow>>["flow"],
   flowRunId: string,
   triggerPayload: Json,
+  assetBaseUrl: string,
 ) {
   const { data: steps, error: stepsError } = await supabase
     .from("flow_steps")
@@ -417,7 +424,7 @@ async function executeFlowSteps(
             eventType = "email_skipped";
             context[moduleKey] = metadata.result;
           } else {
-            const result = await sendEmailModule(template as EmailTemplateRow, step, context, workspaceSender, defaultSendingAccount as DefaultSendingAccount);
+            const result = await sendEmailModule(template as EmailTemplateRow, step, context, workspaceSender, defaultSendingAccount as DefaultSendingAccount, assetBaseUrl);
             metadata.result = result;
             title = result.ok ? `${step.name} sent` : `${step.name} ${result.skipped ? "skipped" : "failed"}`;
             eventType = result.ok ? "email_sent" : result.skipped ? "email_skipped" : "email_failed";
@@ -576,7 +583,7 @@ export async function POST(request: Request, context: RouteContext) {
       throw runStartError;
     }
 
-    const execution = await executeFlowSteps(supabase, flow, flowRun.id, payload);
+    const execution = await executeFlowSteps(supabase, flow, flowRun.id, payload, getAppBaseUrl(request));
     const completedAt = new Date().toISOString();
     const { data: completedRun, error: runCompleteError } = await supabase
       .from("flow_runs")
