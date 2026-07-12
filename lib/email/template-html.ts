@@ -235,27 +235,32 @@ function applyBodyTextStylesHtml(html: string, left: number, right: number, text
 
   return html.replace(/<(p|li|blockquote|td|div|span)\b([^>]*)>/gi, (match, tag: string, attrs: string) => {
     const styleMatch = attrs.match(/\sstyle=(["'])(.*?)\1/i);
+    const supportsTextInset = /^(p|li|blockquote)$/i.test(tag);
     const insetStyle = [
-      "box-sizing:border-box",
-      left > 0 ? `padding-left:${left}px` : "",
-      right > 0 ? `padding-right:${right}px` : "",
+      supportsTextInset ? "box-sizing:border-box" : "",
+      supportsTextInset && left > 0 ? `padding-left:${left}px` : "",
+      supportsTextInset && right > 0 ? `padding-right:${right}px` : "",
       hasTextSize ? `font-size:${textSize}px` : "",
       hasTextColor ? `color:${textColor}` : "",
     ].filter(Boolean).join(";");
 
     if (styleMatch) {
       let nextStyle = styleMatch[2];
-      nextStyle = setInlineStyleValue(nextStyle, "box-sizing", "border-box");
-      if (left > 0) {
+
+      if (supportsTextInset) {
+        nextStyle = setInlineStyleValue(nextStyle, "box-sizing", "border-box");
+      }
+      if (supportsTextInset && left > 0) {
         nextStyle = setInlineStyleValue(nextStyle, "padding-left", `${left}px`);
       }
-      if (right > 0) {
+      if (supportsTextInset && right > 0) {
         nextStyle = setInlineStyleValue(nextStyle, "padding-right", `${right}px`);
       }
-      if (hasTextSize) {
+
+      if (hasTextSize && !/font-size\s*:/i.test(nextStyle)) {
         nextStyle = setInlineStyleValue(nextStyle, "font-size", `${textSize}px`);
       }
-      if (hasTextColor) {
+      if (hasTextColor && !/color\s*:/i.test(nextStyle)) {
         nextStyle = setInlineStyleValue(nextStyle, "color", textColor);
       }
 
@@ -388,12 +393,9 @@ export function buildSendableTemplateHtml(input: {
     styles.emailBoxShadow && styles.emailBoxShadow !== "none" ? `box-shadow:${styles.emailBoxShadow}` : "",
   ].filter(Boolean).join(";");
   const hasBodyContent = bodyHtmlWithTextStyles.replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, "").trim().length > 0 || /<(img|table|video|hr|br|svg|a)\b/i.test(bodyHtmlWithTextStyles);
-  const bodyInnerStyle = [
-    "box-sizing:border-box",
-    bodyContentMargin > 0 ? `padding:${bodyContentMargin}px` : "",
-  ].filter(Boolean).join(";");
+  const bodyCellPadding = hasBodyContent && bodyContentMargin > 0 ? bodyContentMargin : 0;
   const bodyCellContent = hasBodyContent
-    ? `<div style="${bodyInnerStyle}">${bodyHtmlWithTextStyles}</div>`
+    ? bodyHtmlWithTextStyles
     : `<table role="presentation" width="100%" height="${bodyMinHeight}" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;height:${bodyMinHeight}px;background:#ffffff;"><tr><td height="${bodyMinHeight}" bgcolor="#ffffff" style="height:${bodyMinHeight}px;background:#ffffff;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table>`;
 
   return `<!doctype html>
@@ -422,7 +424,7 @@ export function buildSendableTemplateHtml(input: {
                     <td align="center" style="padding:0;">
                       <table role="presentation" width="100%" height="${bodyMinHeight}" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="${cardStyle}">
                         <tr>
-                          <td height="${bodyMinHeight}" bgcolor="#ffffff" style="padding:0;overflow:hidden;height:${bodyMinHeight}px;vertical-align:top;background:#ffffff;">
+                          <td height="${bodyMinHeight}" bgcolor="#ffffff" style="padding:${bodyCellPadding}px;overflow:hidden;height:${bodyMinHeight}px;vertical-align:top;background:#ffffff;">
                             ${bodyCellContent}
                           </td>
                         </tr>
